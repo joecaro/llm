@@ -2,20 +2,125 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@layer base {
+  :root {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    
+    --border: 240 3.7% 15.9%;
+    
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 85.7% 97.3%;
+
+    --ring: 240 4.9% 83.9%;
+  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
   }
 }
 
 body {
-  color: var(--foreground);
+  color: var(--text-primary);
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.prose {
+  @apply text-foreground/90;
+}
+
+.prose code {
+  @apply text-foreground/90;
+}
+
+.prose pre {
+  @apply bg-transparent;
+}
+
+/* Adding some utility classes for text */
+.text-primary {
+  color: var(--text-primary);
+}
+
+.text-secondary {
+  color: var(--text-secondary);
+}
+
+/* Textarea styles */
+textarea {
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+textarea::-webkit-scrollbar {
+  width: 0px;
+}
+
+/* Remove default textarea resize handle */
+textarea::-webkit-resizer {
+  display: none;
+}
+
+/* Code block styling */
+.prose pre {
+  margin: 0 !important;
+  background: transparent !important;
+}
+
+.prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.875em;
+}
+
+/* Token colors for syntax highlighting */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: #8b949e !important;
+}
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol,
+.token.deleted {
+  color: #79c0ff !important;
+}
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin,
+.token.inserted {
+  color: #a5d6ff !important;
+}
+
+.token.operator,
+.token.entity,
+.token.url,
+.language-css .token.string,
+.style .token.string {
+  color: #d2a8ff !important;
+}
+
+.token.function,
+.token.class-name {
+  color: #d2a8ff !important;
+}
+
+.token.keyword {
+  color: #ff7b72 !important;
 }

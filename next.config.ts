@@ -4,4 +4,11 @@ const nextConfig: NextConfig = {
   /* config options here */
 };
 
-export default nextConfig;
+
+function exposeNext(nextConfig: NextConfig) {
+  console.log(nextConfig);
+
+  return nextConfig;
+}
+
+export default exposeNext(nextConfig);
