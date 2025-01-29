@@ -8,31 +8,49 @@ import "prismjs/components/prism-jsx";
 import "prismjs/components/prism-tsx";
 import "prismjs/components/prism-bash";
 import "prismjs/components/prism-json";
+import "prismjs/components/prism-python";
 import { useEffect, useRef } from "react";
 import { cn } from "@/utils/cn";
+import CopyButton from "@/components/copy-button";
+import { motion } from "framer-motion";
 
 export function MessageContent({ content }: { content: string }) {
   const codeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (codeRef.current) {
-      Prism.highlightAllUnder(codeRef.current);
+      Prism.highlightAllUnder(codeRef.current, true, (e) => {
+        console.log(e);
+        console.log("highlighted");
+      });
     }
   }, [content]);
 
   return (
-    <div ref={codeRef}>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="border p-2 text-primary border-neutral-600 bg-muted/50 rounded-lg shadow"
+      ref={codeRef}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         className="prose prose-invert max-w-none"
         components={{
           // @ts-expect-error - PrismJS types are not fully compatible with ReactMarkdown
-          code({ inline, className, children, ...props }) {
+          code({ /* node, */ inline, className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || "");
-            
+
             if (!inline && match) {
               return (
-                <div className="relative my-4">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.3, delay: 0.2 }}
+                  className="relative my-4"
+                >
+                  <CopyButton text={String(children)} />
                   <pre className="!p-0 !m-0">
                     <code
                       className={cn(
@@ -42,14 +60,13 @@ export function MessageContent({ content }: { content: string }) {
                       )}
                       {...props}
                     >
-                      {String(children).replace(/\n$/, '')}
+                      {String(children).replace(/\n$/, "")}
                     </code>
                   </pre>
-                </div>
+                </motion.div>
               );
             }
 
-            // For inline code
             return (
               <code
                 className="bg-zinc-800 px-1.5 py-0.5 rounded text-sm font-mono"
@@ -66,6 +83,6 @@ export function MessageContent({ content }: { content: string }) {
       >
         {content}
       </ReactMarkdown>
-    </div>
+    </motion.div>
   );
 }

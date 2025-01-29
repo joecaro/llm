@@ -1,102 +1,70 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
-import {
-  Chat,
-  createNewChat,
-  saveChat,
-  deleteChat,
-  getChats,
-} from "@/utils/chat-storage";
-import { useState, useEffect } from "react";
+import { createNewChat } from "@/utils/chat-storage";
+import { PlusIcon, TrashIcon } from "lucide-react";
+import { Button } from "./ui/button";
+import { cn } from "@/lib/utils";
+import { useChatStore } from "@/store/chat-store";
+import { motion, AnimatePresence } from "framer-motion";
 
-export function ChatSidebar({
-  onChatSelect,
-  selectedChat,
-}: {
-  onChatSelect: (chat: Chat | null) => void;
-  selectedChat: Chat | null;
-}) {
-  const [chats, setChats] = useState<Chat[]>([]);
-
-  useEffect(() => {
-    const storedChats = getChats();
-    setChats(storedChats);
-    if (storedChats.length > 0) {
-      onChatSelect(storedChats[0]);
-    }
-  }, [onChatSelect]);
+export function ChatSidebar() {
+  const chats = useChatStore.use.chats();
+  const currentChatId = useChatStore.use.currentChatId();
+  const addChat = useChatStore.use.addChat();
+  const deleteChat = useChatStore.use.deleteChat();
+  const setCurrentChatId = useChatStore.use.setCurrentChatId();
 
   const handleNewChat = () => {
     const newChat = createNewChat();
-    saveChat(newChat);
-    setChats((prev) => [newChat, ...prev]);
-    onChatSelect(newChat);
+    addChat(newChat);
   };
 
   const handleDeleteChat = (chatId: string) => {
     deleteChat(chatId);
-    setChats((prev) => prev.filter((chat) => chat.id !== chatId));
-    if (selectedChat?.id === chatId) {
-      const remaining = getChats();
-      if (remaining.length > 0) {
-        onChatSelect(remaining[0]);
-      } else {
-        onChatSelect(null);
-      }
-    }
   };
 
   return (
-    <div className="w-80 bg-background border-r border-border flex flex-col">
-      <div className="p-4 border-b border-border">
-        <button
-          onClick={handleNewChat}
-          className="w-full flex items-center gap-2 px-4 py-2.5 rounded-md 
-            bg-muted/50 hover:bg-muted transition-colors
-            text-sm font-medium text-foreground/80 hover:text-foreground"
-        >
-          <Plus className="w-4 h-4" />
-          New Chat
-        </button>
+    <div className="w-64 border-r border-white/10 flex flex-col">
+      <div className="p-4 border-b border-white/10">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-white/90">Chats</p>
+          <Button onClick={handleNewChat} variant="default" size="icon">
+            <PlusIcon className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
-
-      <div className="flex-1 overflow-auto py-2">
-        {chats.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No chats yet. Start a new conversation!
-          </div>
-        ) : (
-          chats.map((chat) => (
-            <button
+      <motion.div layout className="flex-1 overflow-y-auto p-2 space-y-2">
+        <AnimatePresence mode="popLayout">
+          {chats.map((chat) => (
+            <motion.div
+              layout
               key={chat.id}
-              onClick={() => onChatSelect(chat)}
-              className={`w-full text-left px-4 py-2.5 text-sm group flex items-center gap-2
-                transition-colors
-                ${
-                  selectedChat?.id === chat.id
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:bg-muted/50"
-                }`}
-            >
-              <div className="flex-1 truncate">{chat.title}</div>
-              {selectedChat?.id === chat.id && (
-                <div
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteChat(chat.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted/80 
-                    rounded transition-all duration-200 text-muted-foreground 
-                    hover:text-destructive"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </div>
+              initial={{ opacity: 0, x: -20, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -20, scale: 0.9 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setCurrentChatId(chat.id)}
+              className={cn(
+                "text-primary w-full text-left flex items-center justify-between px-4 py-2 rounded-lg cursor-pointer bg-muted/50 transition-colors border border-transparent",
+                chat.id === currentChatId && "border-neutral-500"
               )}
-            </button>
-          ))
-        )}
-      </div>
+            >
+              <motion.span layout="position">{chat.title}</motion.span>
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteChat(chat.id);
+                }}
+                variant="destructive"
+                size="icon"
+                className="bg-transparent hover:bg-destructive"
+              >
+                <TrashIcon className="w-4 h-4" />
+              </Button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </motion.div>
     </div>
   );
 }
