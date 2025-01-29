@@ -17,7 +17,6 @@ export function MessagesSection() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState<ModelId>("llama3.2");
   const isStreaming = useRef(false);
-  const isScrolling = useRef(false);
 
   const currentChatId = useChatStore.use.currentChatId();
   const addMessageToChat = useChatStore.use.addMessageToChat();
@@ -27,7 +26,6 @@ export function MessagesSection() {
   useScrollToBottom({
     chatContainerRef,
     isStreaming: isStreaming.current,
-    isScrolling: isScrolling.current,
     chat,
   });
 
@@ -136,16 +134,7 @@ export function MessagesSection() {
   }
 
   return (
-    <div
-      onScrollCapture={(e) => {
-        const t = e.target;
-
-        isScrolling.current =
-        // @ts-expect-error - jsut some event typing
-          t.scrollHeight - t.scrollTop - t.clientHeight < 100;
-      }}
-      className="flex flex-col h-full"
-    >
+    <div className="flex flex-col h-full">
       <div
         ref={chatContainerRef}
         className="flex-1 overflow-y-auto scroll-smooth"
