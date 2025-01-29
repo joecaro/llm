@@ -17,7 +17,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useState } from "react";
-export type ModelId = "llama3.2" | "codellama3.2" | "deepseek-r1:7b";
+export type ModelId = "llama3.2" | "codellama:latest" | "deepseek-r1:7b";
 
 interface ModelSelectorProps {
   value: ModelId;
@@ -30,8 +30,8 @@ const models: { value: ModelId; label: string }[] = [
     label: "Llama 3.2",
   },
   {
-    value: "codellama3.2",
-    label: "Code Llama 3.2",
+    value: "codellama:latest",
+    label: "Code Llama (Latest)",
   },
   {
     value: "deepseek-r1:7b",

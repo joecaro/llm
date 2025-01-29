@@ -12,10 +12,17 @@ import "prismjs/components/prism-python";
 import { useEffect, useRef } from "react";
 import { cn } from "@/utils/cn";
 import CopyButton from "@/components/copy-button";
-import { motion } from "framer-motion";
+import { motion, usePresence } from "framer-motion";
 
-export function MessageContent({ content }: { content: string }) {
+export function MessageContent({
+  content,
+  isStreaming,
+}: {
+  content: string;
+  isStreaming?: boolean;
+}) {
   const codeRef = useRef<HTMLDivElement>(null);
+  const [isPresent] = usePresence();
 
   useEffect(() => {
     if (codeRef.current) {
@@ -27,10 +34,7 @@ export function MessageContent({ content }: { content: string }) {
   }, [content]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
+    <div
       className="border p-2 text-primary border-neutral-600 bg-muted/50 rounded-lg shadow"
       ref={codeRef}
     >
@@ -44,12 +48,7 @@ export function MessageContent({ content }: { content: string }) {
 
             if (!inline && match) {
               return (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3, delay: 0.2 }}
-                  className="relative my-4"
-                >
+                <div className="relative my-4">
                   <CopyButton text={String(children)} />
                   <pre className="!p-0 !m-0">
                     <code
@@ -63,7 +62,7 @@ export function MessageContent({ content }: { content: string }) {
                       {String(children).replace(/\n$/, "")}
                     </code>
                   </pre>
-                </motion.div>
+                </div>
               );
             }
 
@@ -83,6 +82,6 @@ export function MessageContent({ content }: { content: string }) {
       >
         {content}
       </ReactMarkdown>
-    </motion.div>
+    </div>
   );
 }

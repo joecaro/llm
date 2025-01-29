@@ -2,12 +2,13 @@
 
 import { z } from 'zod'
 import { ModelId } from '@/components/model-selector'
+import { Chat } from '@/types/chat'
 
 const messageSchema = z.object({
   message: z.string().min(1, 'Message is required'),
 })
 
-export async function sendMessage(formData: FormData, model: ModelId) {
+export async function sendMessage(chat: Chat, formData: FormData, model: ModelId) {
   const validatedFields = messageSchema.safeParse({
     message: formData.get('message'),
   })
@@ -26,6 +27,8 @@ export async function sendMessage(formData: FormData, model: ModelId) {
       payload: {
         model,
         messages: [
+          { role: 'system', content: 'You are a helpful assistant. You are given a message and you need to respond to it. You act like a blimey old pirate.' },
+          ...chat.messages,
           { role: 'user', content: validatedFields.data.message }
         ],
         stream: true,
