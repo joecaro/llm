@@ -52,8 +52,6 @@ export function MessagesSection() {
     isStreaming.current = true;
     formRef.current?.reset();
 
-    const result = await sendMessage(currentChat, formData, selectedModel);
-
     const assistantMessageId = crypto.randomUUID();
     const assistantMessageObj = {
       id: assistantMessageId,
@@ -64,69 +62,71 @@ export function MessagesSection() {
 
     addMessageToChat(currentChat.id, assistantMessageObj);
 
-    if (result.success && result.url) {
-      try {
-        const response = await fetch(result.url, {
+    try {
+      const response = await fetch(
+        "http://127.0.0.1:11434/v1/chat/completions",
+        {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(result.payload),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to get completion");
+          body: JSON.stringify({
+            model: selectedModel,
+            messages: [
+              { role: "system", content: "You are a helpful ai assistant." },
+              ...(chat?.messages || []),
+              { role: "user", content: userMessage },
+            ],
+            stream: true,
+          }),
         }
+      );
 
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-        let streamedContent = "";
+      if (!response.ok) {
+        throw new Error("Failed to get completion");
+      }
 
-        if (reader) {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let streamedContent = "";
 
-            const chunk = decoder.decode(value);
-            const lines = chunk.split("\n").filter((line) => line.trim());
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-            for (const line of lines) {
-              try {
-                if (line === "data: [DONE]") continue;
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n").filter((line) => line.trim());
 
-                const jsonString = line.replace(/^data: /, "");
-                const json = JSON.parse(jsonString);
+          for (const line of lines) {
+            try {
+              if (line === "data: [DONE]") continue;
 
-                if (json.choices?.[0]?.delta?.content) {
-                  streamedContent += json.choices[0].delta.content;
-                  updateMessageInChat(
-                    currentChat.id,
-                    assistantMessageId,
-                    streamedContent
-                  );
-                }
-              } catch (e) {
-                console.error("Error parsing JSON:", e);
+              const jsonString = line.replace(/^data: /, "");
+              const json = JSON.parse(jsonString);
+
+              if (json.choices?.[0]?.delta?.content) {
+                streamedContent += json.choices[0].delta.content;
+                updateMessageInChat(
+                  currentChat.id,
+                  assistantMessageId,
+                  streamedContent
+                );
               }
+            } catch (e) {
+              console.error("Error parsing JSON:", e);
             }
           }
         }
-      } catch (error) {
-        console.error("Error reading stream:", error);
-        updateMessageInChat(
-          currentChat.id,
-          assistantMessageId,
-          "Sorry, I encountered an error while streaming the response."
-        );
-      } finally {
-        isStreaming.current = false;
       }
-    } else if (result.error) {
+    } catch (error) {
+      console.error("Error reading stream:", error);
       updateMessageInChat(
         currentChat.id,
         assistantMessageId,
-        "Sorry, I encountered an error. Please try again."
+        "Sorry, I encountered an error while streaming the response."
       );
+    } finally {
       isStreaming.current = false;
     }
 
