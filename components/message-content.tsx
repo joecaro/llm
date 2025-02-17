@@ -1,5 +1,5 @@
-import { MDXRemote } from 'next-mdx-remote';
-import { serialize } from 'next-mdx-remote/serialize';
+import { MDXRemote } from "next-mdx-remote";
+import { serialize } from "next-mdx-remote/serialize";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/utils/cn";
 import CopyButton from "@/components/copy-button";
@@ -12,7 +12,7 @@ import "prismjs/components/prism-tsx";
 import "prismjs/components/prism-bash";
 import "prismjs/components/prism-json";
 import "prismjs/components/prism-python";
-import remarkGfm from 'remark-gfm';
+import remarkGfm from "remark-gfm";
 
 export function MessageContent({
   content,
@@ -35,7 +35,7 @@ export function MessageContent({
     async function serializeMdx() {
       try {
         // Ensure content is a string and not empty
-        if (typeof content !== 'string' || !content.trim()) {
+        if (typeof content !== "string" || !content.trim()) {
           setMdxSource(null);
           return;
         }
@@ -43,22 +43,22 @@ export function MessageContent({
         const mdxSource = await serialize(content, {
           mdxOptions: {
             remarkPlugins: [remarkGfm],
-            format: 'mdx',
+            format: "mdx",
           },
         });
         setMdxSource(mdxSource);
         setError(null);
       } catch (err) {
-        console.error('Error serializing MDX:', err);
-        setError(err instanceof Error ? err.message : 'Error processing content');
-        // Fallback to plain text display
-        setMdxSource(null);
+        console.error("Error serializing MDX:", err);
+        setError(
+          err instanceof Error ? err.message : "Error processing content"
+        );
       }
     }
     serializeMdx();
   }, [content]);
 
-  if (error || !mdxSource) {
+  if (!mdxSource) {
     // Fallback to plain text display
     return (
       <div className="border p-2 text-primary border-neutral-600 bg-muted/50 rounded-lg shadow">
@@ -69,10 +69,13 @@ export function MessageContent({
 
   return (
     <div
-      className="border p-2 text-primary border-neutral-600 bg-muted/50 rounded-lg shadow"
+      className="border p-2 text-primary border-neutral-600 bg-muted/50 rounded-lg shadow overflow-x-auto max-w-full"
       ref={codeRef}
     >
       <MDXRemote {...mdxSource} />
+      {error || !mdxSource ? (
+        <div className="absolute top-0 right-0 px-2">Rendering Error</div>
+      ) : null}
     </div>
   );
 }

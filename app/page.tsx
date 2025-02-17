@@ -3,9 +3,9 @@ import { ChatSidebar } from "@/components/chat-sidebar";
 
 export default function Home() {
   return (
-    <main className="flex h-screen bg-background">
+    <main className="h-screen w-screen bg-background grid grid-cols-[16rem_auto]">
       <ChatSidebar />
-      <div className="flex-1 flex flex-col relative">
+      <div className="h-screen w-[calc(100vw-16rem)] flex flex-col relative">
         <MessagesSection />
       </div>
     </main>

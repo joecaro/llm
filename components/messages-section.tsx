@@ -10,6 +10,7 @@ import { ModelId } from "./model-selector";
 import { DEFAULT_CHAT_MESSAGE } from "@/utils/constants";
 import { useChatStore } from "@/store/chat-store";
 import useScrollToBottom from "@/lib/use-scroll-to-bottom";
+import { fetchCompletion, streamCompletion } from "@/fetches/completion";
 
 export function MessagesSection() {
   const formRef = useRef<HTMLFormElement>(null);
@@ -21,6 +22,7 @@ export function MessagesSection() {
   const currentChatId = useChatStore.use.currentChatId();
   const addMessageToChat = useChatStore.use.addMessageToChat();
   const updateMessageInChat = useChatStore.use.updateMessageInChat();
+  const updateChatTitle = useChatStore.use.updateChatTitle();
   const chat = useChatStore.use.chats().find((c) => c.id === currentChatId);
 
   useScrollToBottom({
@@ -29,7 +31,7 @@ export function MessagesSection() {
     chat,
   });
 
-  const createNewChatFromMessage = useChatStore.use.createNewChatFromMessage();
+  const createNewChat = useChatStore.use.createNewChat();
 
   async function handleSubmit(formData: FormData) {
     const userMessage = formData.get("message") as string;
@@ -43,10 +45,15 @@ export function MessagesSection() {
       createdAt: Date.now(),
     };
 
-    if (chat) {
-      addMessageToChat(chat.id, userMessageObj);
+    const currentChat = chat || createNewChat();
+    addMessageToChat(currentChat.id, userMessageObj);
+    console.log(currentChat.messages.length);
+    
+    if (currentChat.messages.length === 0) {
+      console.log('getting title');
+      
+      fetchTitle(currentChat.id, userMessage);
     }
-    const currentChat = chat || createNewChatFromMessage(userMessageObj);
 
     setIsLoading(true);
     isStreaming.current = true;
@@ -63,62 +70,16 @@ export function MessagesSection() {
     addMessageToChat(currentChat.id, assistantMessageObj);
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:11434/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: selectedModel,
-            messages: [
-              { role: "system", content: "You are a helpful ai assistant." },
-              ...(chat?.messages || []),
-              { role: "user", content: userMessage },
-            ],
-            stream: true,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to get completion");
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let streamedContent = "";
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value);
-          const lines = chunk.split("\n").filter((line) => line.trim());
-
-          for (const line of lines) {
-            try {
-              if (line === "data: [DONE]") continue;
-
-              const jsonString = line.replace(/^data: /, "");
-              const json = JSON.parse(jsonString);
-
-              if (json.choices?.[0]?.delta?.content) {
-                streamedContent += json.choices[0].delta.content;
-                updateMessageInChat(
-                  currentChat.id,
-                  assistantMessageId,
-                  streamedContent
-                );
-              }
-            } catch (e) {
-              console.error("Error parsing JSON:", e);
-            }
-          }
-        }
-      }
+      streamCompletion({
+        model: selectedModel,
+        messages: [
+          { role: "system", content: "You are a helpful ai assistant." },
+          ...(chat?.messages || []),
+          { role: "user", content: userMessage },
+        ],
+        update: (str) =>
+          updateMessageInChat(currentChat.id, assistantMessageId, str),
+      });
     } catch (error) {
       console.error("Error reading stream:", error);
       updateMessageInChat(
@@ -131,6 +92,25 @@ export function MessagesSection() {
     }
 
     setIsLoading(false);
+  }
+
+  async function fetchTitle(chatId: string, initialMessage: string) {
+    const title = await fetchCompletion({
+      model: "llama3.2",
+      messages: [
+        {
+          role: "system",
+          content:
+            "you are a summarizer. Your task is to take the following prompt and sumamrize it for a chat sidebar in 4 words or less.",
+        },
+        { role: "user", content: initialMessage },
+      ],
+    });
+
+    console.log(title);
+    
+
+    updateChatTitle(chatId, title);
   }
 
   return (

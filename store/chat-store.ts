@@ -7,7 +7,7 @@ interface ChatStore {
   currentChatId: string | null;
   setCurrentChatId: (id: string | null) => void;
   addChat: (chat: Chat) => void;
-  createNewChatFromMessage: (message: ChatMessage) => Chat;
+  createNewChat: () => Chat;
   updateChat: (chat: Chat) => void;
   deleteChat: (chatId: string) => void;
   updateChatTitle: (chatId: string, title: string) => void;
@@ -31,11 +31,11 @@ const useChatStoreBase = create<ChatStore>()(
             chats: [...state.chats, chat],
             currentChatId: chat.id,
           })),
-        createNewChatFromMessage: (message) => {
+        createNewChat: () => {
           const newChat = {
             id: crypto.randomUUID(),
             title: "New Chat",
-            messages: [message],
+            messages: [],
             createdAt: Date.now(),
           };
 
