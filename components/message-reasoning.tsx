@@ -3,7 +3,6 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 import { parseMessageContent } from "@/utils/message-parser";
-import { motion } from "framer-motion";
 
 export function MessageReasoning({ content }: { content: string }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -12,7 +11,7 @@ export function MessageReasoning({ content }: { content: string }) {
   if (!reasoning) return null;
 
   return (
-    <motion.div layout className="mt-2 border-t border-white/10">
+    <div className="mt-2 border-t border-white/10">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center gap-2 text-sm text-white/50 hover:text-white/70 transition py-2"
@@ -34,6 +33,6 @@ export function MessageReasoning({ content }: { content: string }) {
           {reasoning}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 } 

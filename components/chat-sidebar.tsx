@@ -49,7 +49,9 @@ export function ChatSidebar() {
                 chat.id === currentChatId && "border-neutral-500"
               )}
             >
-              <motion.span layout="position">{chat.title}</motion.span>
+              <motion.span layout="position" className="truncate">
+                {chat.title}
+              </motion.span>
               <Button
                 onClick={(e) => {
                   e.stopPropagation();

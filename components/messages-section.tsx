@@ -48,10 +48,8 @@ export function MessagesSection() {
     const currentChat = chat || createNewChat();
     addMessageToChat(currentChat.id, userMessageObj);
     console.log(currentChat.messages.length);
-    
+
     if (currentChat.messages.length === 0) {
-      console.log('getting title');
-      
       fetchTitle(currentChat.id, userMessage);
     }
 
@@ -101,14 +99,13 @@ export function MessagesSection() {
         {
           role: "system",
           content:
-            "you are a summarizer. Your task is to take the following prompt and sumamrize it for a chat sidebar in 4 words or less.",
+            "you are a summarizer. Your task is to take the following prompt and sumamrize it for a chat sidebar in 4 words or less. Do not give any explanation just a MAXIMUM of 4 words.",
         },
         { role: "user", content: initialMessage },
       ],
     });
 
     console.log(title);
-    
 
     updateChatTitle(chatId, title);
   }
