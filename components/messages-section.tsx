@@ -114,7 +114,7 @@ export function MessagesSection() {
     <div className="flex flex-col h-full">
       <div
         ref={chatContainerRef}
-        className="flex-1 overflow-y-auto scroll-smooth"
+        className="flex-1 overflow-y-auto scroll-smooth mx-auto"
       >
         <div className="mx-auto">
           <div className="space-y-6 p-8">
