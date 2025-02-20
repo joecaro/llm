@@ -24,7 +24,7 @@ export function ChatSidebar() {
   };
 
   return (
-    <div className="w-64 border-r border-white/10 flex flex-col">
+    <div className="w-64 border-r border-white/10 flex flex-col bg-midground/50">
       <div className="p-4 border-b border-white/10">
         <div className="flex items-center justify-between gap-2">
           <p className="text-white/90">Chats</p>
@@ -45,8 +45,8 @@ export function ChatSidebar() {
               transition={{ duration: 0.2 }}
               onClick={() => setCurrentChatId(chat.id)}
               className={cn(
-                "text-primary w-full text-left flex items-center justify-between px-4 py-2 rounded-lg cursor-pointer bg-muted/50 transition-colors border border-transparent",
-                chat.id === currentChatId && "border-neutral-500"
+                "text-primary w-full text-left flex items-center justify-between px-4 py-2 rounded-lg cursor-pointer bg-midground transition-colors border border-border",
+                chat.id === currentChatId && "border-white/50"
               )}
             >
               <motion.span layout="position" className="truncate">

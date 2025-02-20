@@ -96,7 +96,7 @@ export default function UserInput({
   };
 
   return (
-    <div className="border-t border-border drop-shadow-md p-4">
+    <div className="border-t border-border drop-shadow-md p-4 bg-midground/50">
       <form ref={formRef} action={onSubmit} className="flex gap-4 items-start">
         <ModelSelector value={selectedModel} onChange={onModelChange} />
         <div className="flex-1 relative">

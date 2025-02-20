@@ -12,6 +12,7 @@ export default {
   		colors: {
   			border: 'hsl(var(--border))',
   			background: 'hsl(var(--background))',
+  			midground: 'hsl(var(--midground))',
   			foreground: 'hsl(var(--foreground))',
   			muted: {
   				DEFAULT: 'hsl(var(--muted))',

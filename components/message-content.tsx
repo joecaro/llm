@@ -67,7 +67,7 @@ export function MessageContent({
 
   return (
     <div
-      className="border p-2 text-primary border-neutral-600 bg-muted/50 rounded-lg shadow overflow-x-auto max-w-full prose prose-invert prose-pre:bg-neutral-900 prose-pre:border prose-pre:border-neutral-800 prose-pre:rounded-md prose-pre:p-4 prose-code:text-pink-400 prose-code:before:content-none prose-code:after:content-none prose-headings:text-primary prose-a:text-blue-400 prose-strong:text-primary prose-em:text-primary prose-blockquote:text-neutral-300 prose-blockquote:border-l-4 prose-blockquote:border-neutral-700 prose-blockquote:pl-4 prose-blockquote:italic"
+      className="border shadow p-2 text-primary border-border bg-muted/50 rounded-lg shadow overflow-x-auto max-w-full prose prose-invert prose-pre:bg-neutral-900 prose-pre:border prose-pre:border-neutral-800 prose-pre:rounded-md prose-pre:p-4 prose-code:text-pink-400 prose-code:before:content-none prose-code:after:content-none prose-headings:text-primary prose-a:text-blue-400 prose-strong:text-primary prose-em:text-primary prose-blockquote:text-neutral-300 prose-blockquote:border-l-4 prose-blockquote:border-neutral-700 prose-blockquote:pl-4 prose-blockquote:italic"
       ref={codeRef}
     >
       <MDXRemote {...mdxSource} />
