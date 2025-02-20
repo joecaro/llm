@@ -131,9 +131,6 @@ export function MessagesSection() {
                     {message.role === "assistant" ? "AI" : "You"}
                   </div>
                   <div className="flex-1 space-y-2">
-                    <p className="text-sm text-primary">
-                      {message.role === "assistant" ? "Assistant" : "You"}
-                    </p>
                     <div>
                       <MessageReasoning content={message.content} />
                       <MessageContent

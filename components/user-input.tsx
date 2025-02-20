@@ -41,6 +41,14 @@ export default function UserInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
+  const adjustTextareaHeight = () => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+  };
+
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -100,14 +108,18 @@ export default function UserInput({
       <form ref={formRef} action={onSubmit} className="flex gap-4 items-start">
         <ModelSelector value={selectedModel} onChange={onModelChange} />
         <div className="flex-1 relative">
-          <Textarea
-            name="message"
-            placeholder="Message... (⌘K to focus, ↵ to send, shift+↵ for newline)"
-            className="flex-1 p-3 rounded-lg bg-muted/50 focus:outline-none focus:ring-1 focus:ring-ring text-sm text-foreground placeholder:text-muted-foreground resize-none overflow-hidden min-h-[44px] max-h-[200px] border border-border"
-            disabled={isLoading}
-            onKeyDown={handleKeyPress}
-            ref={textareaRef}
-          />
+          <div className="max-h-[500px] overflow-y-auto flex-1 rounded-lg bg-muted/50 w-full border border-border">
+            <Textarea
+              name="message"
+              placeholder="Message... (⌘K to focus, ↵ to send, shift+↵ for newline)"
+              className="focus:outline-none focus:ring-1 focus:ring-ring text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-[44px] overflow-hidden"
+              disabled={isLoading}
+              onKeyDown={handleKeyPress}
+              onChange={adjustTextareaHeight}
+              onInput={adjustTextareaHeight}
+              ref={textareaRef}
+            />
+          </div>
           <Button
             variant="ghost"
             onClick={handleFileButtonClick}
