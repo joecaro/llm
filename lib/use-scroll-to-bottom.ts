@@ -45,7 +45,7 @@ export default function useScrollToBottom({
       // Use smooth scrolling only for user-initiated scrolls
       container.scrollTo({
         top: yOffset,
-        behavior: isScrolling.current ? "auto" : "smooth",
+        behavior: "smooth",
       });
     },
     [chatContainerRef]
