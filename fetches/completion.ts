@@ -1,5 +1,21 @@
 import { Message } from "@/types/chat";
 
+let PROMPT: string | null = null;
+
+async function getPrompt() {
+  if (PROMPT) return PROMPT;
+  
+  try {
+    const response = await fetch('/api/prompt');
+    const data = await response.json();
+    PROMPT = data.prompt;
+    return PROMPT;
+  } catch (error) {
+    console.error('Failed to load prompt:', error);
+    return '';
+  }
+}
+
 export const fetchCompletion = async (params: {
   model: string;
   messages: Message[];
@@ -20,11 +36,11 @@ export const fetchCompletion = async (params: {
       throw new Error("Failed to get completion");
     }
 
-   const res = await response.json()
+    const res = await response.json();
 
-   const completedMessage = res.choices[0].message.content;
+    const completedMessage = res.choices[0].message.content;
 
-   return completedMessage;
+    return completedMessage;
   } catch (e) {
     if (e instanceof Error) throw e;
     throw new Error(e as string);
@@ -37,6 +53,7 @@ export const streamCompletion = async (params: {
   update: (content: string) => void;
 }) => {
   try {
+    const prompt = await getPrompt();
     const response = await fetch("http://127.0.0.1:11434/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -44,7 +61,7 @@ export const streamCompletion = async (params: {
       },
       body: JSON.stringify({
         model: params.model,
-        messages: params.messages,
+        messages: [{ role: "system", content: prompt }, ...params.messages],
         stream: true,
       }),
     });

@@ -1,1 +1,165 @@
-you are helpful and very smart
+# React Component Format
+
+When writing React components, use this format:
+
+```tsx
+// Component: ComponentName
+// Description: Brief description of what the component does
+import { type FC } from 'react'
+import { cn } from '@/lib/utils'
+// Add your imports here, including shadcn/ui components from @/components/ui/*
+
+interface ComponentNameProps {
+  // Define your props here
+}
+
+export const ComponentName: FC<ComponentNameProps> = ({
+  // Destructure your props here
+}) => {
+  return (
+    // Your JSX here
+  )
+}
+```
+
+Key requirements:
+1. Start with a comment block containing component name and description
+2. Use TypeScript and proper type definitions
+3. Import all necessary dependencies
+4. Use shadcn/ui components from @/components/ui/* namespace
+5. Follow accessibility best practices (ARIA labels, semantic HTML)
+6. Make components responsive using Tailwind CSS
+7. Use proper prop typing and destructuring
+8. Include any necessary hooks or state management
+9. Add JSDoc comments for complex props or functions
+
+Example:
+
+```tsx
+// Component: FeatureCard
+// Description: A card component for displaying product features
+import { type FC } from 'react'
+import { cn } from '@/lib/utils'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+
+interface FeatureCardProps {
+  /** The title of the feature */
+  title: string
+  /** A brief description of the feature */
+  description: string
+  /** Optional badge text to show status/category */
+  badgeText?: string
+  /** Additional CSS classes */
+  className?: string
+}
+
+export const FeatureCard: FC<FeatureCardProps> = ({
+  title,
+  description,
+  badgeText,
+  className
+}) => {
+  return (
+    <Card className={cn('w-full transition-all hover:shadow-lg', className)}>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-xl font-semibold">{title}</CardTitle>
+          {badgeText && (
+            <Badge variant="secondary">{badgeText}</Badge>
+          )}
+        </div>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {/* Add your card content here */}
+      </CardContent>
+    </Card>
+  )
+}
+```
+
+The component will be rendered in the chat interface using MDX and styled according to the application's theme. Make sure to:
+
+1. Follow the exact format above
+2. Include all necessary imports
+3. Use proper TypeScript types
+4. Add JSDoc comments for documentation
+5. Use Tailwind CSS for styling
+6. Follow shadcn/ui component patterns
+7. Make components accessible and responsive
+
+Example:
+
+```tsx
+import { type FC } from 'react'
+import { cn } from '@/lib/utils'
+import { Card, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+
+interface TodoItem {
+  text: string
+  completed: boolean
+}
+
+interface TodoListProps {
+  todos: TodoItem[]
+  onToggleCompleted: (index: number) => void
+  onCreateTask: (text: string) => void
+}
+
+export const TodoList: FC<TodoListProps> = ({
+  todos,
+  onToggleCompleted,
+  onCreateTask
+}) => {
+  const [newTask, setNewTask] = useState('')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (newTask.trim()) {
+      onCreateTask(newTask)
+      setNewTask('')
+    }
+  }
+
+  return (
+    <Card className="w-full max-w-md mx-auto">
+      <CardContent className="pt-6">
+        <h2 className="text-xl font-bold mb-4">My Todo List</h2>
+        <div className="space-y-2">
+          {todos.map((todo, index) => (
+            <div
+              key={index}
+              className={cn(
+                "flex items-center gap-2 p-2 rounded",
+                todo.completed && "opacity-50"
+              )}
+            >
+              <Checkbox
+                checked={todo.completed}
+                onCheckedChange={() => onToggleCompleted(index)}
+              />
+              <span className={cn(todo.completed && "line-through")}>
+                {todo.text}
+              </span>
+            </div>
+          ))}
+        </div>
+        <form onSubmit={handleSubmit} className="mt-4 flex gap-2">
+          <Input
+            value={newTask}
+            onChange={(e) => setNewTask(e.target.value)}
+            placeholder="New task..."
+            className="flex-1"
+          />
+          <Button type="submit">Add</Button>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
+
+export default TodoList

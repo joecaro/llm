@@ -11,6 +11,8 @@ import "prismjs/components/prism-bash";
 import "prismjs/components/prism-json";
 import "prismjs/components/prism-python";
 import remarkGfm from "remark-gfm";
+import { ReactComponentPreview } from "./react-component-preview";
+import { parseMessageContent } from "@/utils/message-parser";
 
 export function MessageContent({
   content,
@@ -38,13 +40,27 @@ export function MessageContent({
           return;
         }
 
-        const mdxSource = await serialize(content, {
+        // Parse the content to extract React components
+        const { message, components = [] } = parseMessageContent(content);
+
+        // Create a components object for MDX
+        const mdxComponents = {
+          ReactComponent: ({ index }: { index: string }) => {
+            const component = components[parseInt(index, 10)];
+            return component ? (
+              <ReactComponentPreview code={component.code} />
+            ) : null;
+          },
+        };
+
+        const mdxSource = await serialize(message, {
           mdxOptions: {
             remarkPlugins: [remarkGfm],
             format: "mdx",
           },
         });
-        setMdxSource(mdxSource);
+
+        setMdxSource({ ...mdxSource, frontmatter: { components: mdxComponents } });
         setError(null);
       } catch (err) {
         console.error("Error serializing MDX:", err);
@@ -70,7 +86,7 @@ export function MessageContent({
       className="w-full border p-2 text-primary border-border bg-muted/50 rounded-lg shadow overflow-x-auto max-w-[1100px] prose prose-invert prose-pre:bg-neutral-900 prose-pre:border prose-pre:border-neutral-800 prose-pre:rounded-md prose-pre:p-4 prose-code:text-pink-400 prose-code:before:content-none prose-code:after:content-none prose-headings:text-primary prose-a:text-blue-400 prose-strong:text-primary prose-em:text-primary prose-blockquote:text-neutral-300 prose-blockquote:border-l-4 prose-blockquote:border-neutral-700 prose-blockquote:pl-4 prose-blockquote:italic"
       ref={codeRef}
     >
-      <MDXRemote {...mdxSource} />
+      <MDXRemote {...mdxSource} components={mdxSource.frontmatter.components} />
       {error || !mdxSource ? (
         <div className="absolute top-0 right-0 px-2">Rendering Error</div>
       ) : null}

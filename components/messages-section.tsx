@@ -131,7 +131,7 @@ export function MessagesSection() {
                   <div className="w-full">
                     <MessageReasoning content={message.content} />
                     <MessageContent
-                      content={parseMessageContent(message.content).message}
+                      content={message.content}
                     />
                   </div>
                 </div>
