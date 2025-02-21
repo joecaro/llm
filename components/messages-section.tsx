@@ -114,62 +114,55 @@ export function MessagesSection() {
     <div className="flex flex-col h-full">
       <div
         ref={chatContainerRef}
-        className="flex-1 overflow-y-auto scroll-smooth mx-auto"
+        className="flex-1 overflow-y-auto scroll-smooth w-full"
       >
-        <div className="mx-auto">
-          <div className="space-y-6 p-8">
-            {chat?.messages && chat.messages.length > 0 ? (
-              chat.messages.map((message) => (
-                <div key={message.id} className="flex gap-4 items-start">
-                  <div
-                    className={`w-8 h-8 rounded-full text-primary ${
-                      message.role === "assistant"
-                        ? "bg-white/10"
-                        : "bg-white/20"
-                    } flex items-center justify-center shrink-0`}
-                  >
-                    {message.role === "assistant" ? "AI" : "You"}
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <div>
-                      <MessageReasoning content={message.content} />
-                      <MessageContent
-                        content={parseMessageContent(message.content).message}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-primary flex gap-4 items-start">
-                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/90 shrink-0">
-                  AI
+        <div className="space-y-6 p-8 w-full max-w-[1100px] mx-auto flex flex-col gap-4 items-start">
+          {chat?.messages && chat.messages.length > 0 ? (
+            chat.messages.map((message) => (
+              <div key={message.id} className="flex gap-4 items-start w-full">
+                <div
+                  className={`w-8 h-8 rounded-full text-primary ${
+                    message.role === "assistant" ? "bg-white/10" : "bg-white/20"
+                  } flex items-center justify-center shrink-0`}
+                >
+                  {message.role === "assistant" ? "AI" : "You"}
                 </div>
                 <div className="flex-1 space-y-2">
-                  <p className="text-sm">Assistant</p>
-                  <div>
+                  <div className="w-full">
+                    <MessageReasoning content={message.content} />
                     <MessageContent
-                      content={
-                        parseMessageContent(DEFAULT_CHAT_MESSAGE).message
-                      }
+                      content={parseMessageContent(message.content).message}
                     />
                   </div>
                 </div>
               </div>
-            )}
-            {isLoading &&
-              !chat?.messages[chat.messages.length - 1]?.content && (
-                <div className="flex gap-4 items-start">
-                  <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/90 shrink-0">
-                    AI
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <p className="text-sm">Assistant</p>
-                    <div className="text-sm">●●●</div>
-                  </div>
+            ))
+          ) : (
+            <div className="text-primary flex gap-4 items-start w-full">
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/90 shrink-0">
+                AI
+              </div>
+              <div className="flex-1 space-y-2 w-full">
+                <p className="text-sm">Assistant</p>
+                <div>
+                  <MessageContent
+                    content={parseMessageContent(DEFAULT_CHAT_MESSAGE).message}
+                  />
                 </div>
-              )}
-          </div>
+              </div>
+            </div>
+          )}
+          {isLoading && !chat?.messages[chat.messages.length - 1]?.content && (
+            <div className="flex gap-4 items-start">
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/90 shrink-0">
+                AI
+              </div>
+              <div className="flex-1 space-y-2">
+                <p className="text-sm">Assistant</p>
+                <div className="text-sm">●●●</div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <UserInput
