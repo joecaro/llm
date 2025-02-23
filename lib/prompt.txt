@@ -5,15 +5,13 @@ When writing React components, use this format:
 ```tsx
 // Component: ComponentName
 // Description: Brief description of what the component does
-import { type FC } from 'react'
-import { cn } from '@/lib/utils'
 // Add your imports here, including shadcn/ui components from @/components/ui/*
 
 interface ComponentNameProps {
   // Define your props here
 }
 
-export const ComponentName: FC<ComponentNameProps> = ({
+export const ComponentName = ({
   // Destructure your props here
 }) => {
   return (
@@ -54,14 +52,14 @@ interface FeatureCardProps {
   className?: string
 }
 
-export const FeatureCard: FC<FeatureCardProps> = ({
+export const FeatureCard = ({
   title,
   description,
   badgeText,
   className
 }) => {
   return (
-    <Card className={cn('w-full transition-all hover:shadow-lg', className)}>
+    <Card className={'w-full transition-all hover:shadow-lg'}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-xl font-semibold">{title}</CardTitle>
@@ -86,42 +84,42 @@ The component will be rendered in the chat interface using MDX and styled accord
 3. Use proper TypeScript types
 4. Add JSDoc comments for documentation
 5. Use Tailwind CSS for styling
-6. Follow shadcn/ui component patterns
-7. Make components accessible and responsive
+6. Make components accessible and responsive
+7. Use the following components: Card, CardContent, Button, Input, Checkbox, cn
+8. Components should not use props, and be self-contained
 
 Example:
 
 ```tsx
-import { type FC } from 'react'
-import { cn } from '@/lib/utils'
-import { Card, CardContent } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
+import { useState } from 'react'
 
 interface TodoItem {
   text: string
   completed: boolean
 }
 
-interface TodoListProps {
-  todos: TodoItem[]
-  onToggleCompleted: (index: number) => void
-  onCreateTask: (text: string) => void
-}
-
-export const TodoList: FC<TodoListProps> = ({
-  todos,
-  onToggleCompleted,
-  onCreateTask
-}) => {
+export const TodoList = () => {
+  const [todos, setTodos] = useState([
+    { text: 'Learn React', completed: false },
+    { text: 'Build an app', completed: true },
+  ]);
   const [newTask, setNewTask] = useState('')
 
+  const onCreateTask = (text: string) => {
+    setTodos([...todos, { text, completed: false }]);
+  };
+
+  const onToggleCompleted = (index: number) => {
+    const updatedTodos = [...todos];
+    updatedTodos[index].completed = !updatedTodos[index].completed;
+    setTodos(updatedTodos);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     if (newTask.trim()) {
-      onCreateTask(newTask)
-      setNewTask('')
+      onCreateTask(newTask);
+      setNewTask('');
     }
   }
 
@@ -148,18 +146,19 @@ export const TodoList: FC<TodoListProps> = ({
             </div>
           ))}
         </div>
-        <form onSubmit={handleSubmit} className="mt-4 flex gap-2">
+        <span className="flex items-center gap-2">
           <Input
             value={newTask}
             onChange={(e) => setNewTask(e.target.value)}
             placeholder="New task..."
             className="flex-1"
           />
-          <Button type="submit">Add</Button>
-        </form>
+          <Button onClick={handleSubmit}>Add</Button>
+        </span>
       </CardContent>
     </Card>
   )
 }
 
 export default TodoList
+```

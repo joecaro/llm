@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { type FC } from "react";
 import { cn } from "@/lib/utils";
@@ -33,24 +33,27 @@ export const ReactComponentPreview: FC<ReactComponentPreviewProps> = ({
     // Strip imports and prepare the code
     const processCode = (code: string) => {
       // Remove import statements
-      const codeWithoutImports = code.replace(/import\s+.*?from\s+['"].*?['"]/g, '');
-      
+      const codeWithoutImports = code.replace(
+        /import\s+.*?from\s+['"].*?['"]/g,
+        ""
+      );
+
       // Extract the component code
       const componentCode = codeWithoutImports
-        .replace(/export\s+default\s+\w+/, '')
-        .replace(/export\s+const\s+/, 'const ');
+        .replace(/export\s+default\s+\w+/, "")
+        .replace(/export\s+const\s+/, "const ");
 
       return componentCode;
     };
 
     const iframeContent = `
       <!DOCTYPE html>
-      <html>
+      <html style="height: 100%;">
         <head>
           <meta charset="utf-8">
           <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
           <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-          <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+          <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
           <script src="https://cdn.tailwindcss.com"></script>
           <style>
             body { margin: 0; font-family: system-ui, sans-serif; }
@@ -84,44 +87,55 @@ export const ReactComponentPreview: FC<ReactComponentPreviewProps> = ({
               border: 1px solid hsl(240 3.7% 15.9%);
             }
           </style>
-          <script>
-            // Mock dependencies
-            const cn = (...args) => args.filter(Boolean).join(' ');
-            
-            // Mock UI components
-            const Card = ({ className, children }) => (
-              <div className={\`bg-white rounded-lg shadow \${className || ''}\`}>{children}</div>
-            );
-            
-            const CardContent = ({ className, children }) => (
-              <div className={\`p-4 \${className || ''}\`}>{children}</div>
-            );
-            
-            const Button = ({ className, children, ...props }) => (
-              <button className={\`btn btn-primary \${className || ''}\`} {...props}>{children}</button>
-            );
-            
-            const Input = ({ className, ...props }) => (
-              <input className={\`input \${className || ''}\`} {...props} />
-            );
-            
-            const Checkbox = ({ checked, onCheckedChange, className }) => (
-              <input 
-                type="checkbox" 
-                checked={checked} 
-                onChange={e => onCheckedChange?.(e.target.checked)}
-                className={\`checkbox \${className || ''}\`}
-              />
-            );
-          </script>
         </head>
-        <body>
-          <div id="root"></div>
+        <body style="height: 100%;">
+          <div style="height: 100%;" id="root"></div>
           <script type="text/babel">
+            // Mock dependencies and components - define these in the global scope
+            window.cn = (...args) => args.filter(Boolean).join(' ');
+            
+            window.Card = ({ className, children }) => {
+              return React.createElement('div', {
+                className: \`bg-white rounded-lg shadow \${className || ''}\`
+              }, children);
+            };
+            
+            window.CardContent = ({ className, children }) => {
+              return React.createElement('div', {
+                className: \`p-4 \${className || ''}\`
+              }, children);
+            };
+            
+            window.Button = ({ className, children, ...props }) => {
+              return React.createElement('button', {
+                className: \`btn btn-primary \${className || ''}\`,
+                ...props
+              }, children);
+            };
+            
+            window.Input = ({ className, ...props }) => {
+              return React.createElement('input', {
+                className: \`input \${className || ''}\`,
+                ...props
+              });
+            };
+            
+            window.Checkbox = ({ checked, onCheckedChange, className }) => {
+              return React.createElement('input', {
+                type: "checkbox",
+                checked: checked,
+                onChange: (e) => onCheckedChange?.(e.target.checked),
+                className: \`checkbox \${className || ''}\`
+              });
+            };
+
             try {
               // Add React import reference
               const { useState } = React;
               
+              // Make the components available in the local scope
+              const { Card, CardContent, Button, Input, Checkbox, cn } = window;
+
               ${processCode(code)}
               
               const Component = typeof default_1 !== 'undefined' ? default_1 : 
@@ -129,17 +143,7 @@ export const ReactComponentPreview: FC<ReactComponentPreviewProps> = ({
                               typeof TodoList !== 'undefined' ? TodoList : null;
               
               if (Component) {
-                // Mock props for preview
-                const mockProps = {
-                  todos: [
-                    { text: 'Learn React', completed: false },
-                    { text: 'Build an app', completed: true },
-                  ],
-                  onToggleCompleted: (index) => console.log('Toggle', index),
-                  onCreateTask: (text) => console.log('Create', text),
-                };
-
-                const element = React.createElement(Component, mockProps);
+                const element = React.createElement(Component, {});
                 ReactDOM.render(element, document.getElementById('root'));
               } else {
                 throw new Error('No valid component found to render');
@@ -159,12 +163,12 @@ export const ReactComponentPreview: FC<ReactComponentPreviewProps> = ({
     return (
       <iframe
         srcDoc={iframeContent}
-        className="w-full min-h-[200px] border-none"
+        className="w-full min-h-[200px] h-full border-none"
         sandbox="allow-scripts"
         title="Component Preview"
         onError={(e: React.SyntheticEvent<HTMLIFrameElement>) => {
-          console.error('iframe error:', e);
-          setError('Failed to load preview');
+          console.error("iframe error:", e);
+          setError("Failed to load preview");
         }}
       />
     );
@@ -204,8 +208,8 @@ export const ReactComponentPreview: FC<ReactComponentPreviewProps> = ({
       </CardHeader>
       <CardContent>
         {isPreviewVisible ? (
-          <div className="mt-4 border-t border-border pt-4">
-            <div className="rounded-lg border border-border bg-card p-4">
+          <div className="mt-4 border-t border-border pt-4 h-[500px]">
+            <div className="rounded-lg border border-border bg-card p-4 h-full">
               {error ? (
                 <p className="text-sm text-destructive">{error}</p>
               ) : (
