@@ -13,6 +13,7 @@ import "prismjs/components/prism-python";
 import remarkGfm from "remark-gfm";
 import { ReactComponentPreview } from "./react-component-preview";
 import { parseMessageContent } from "@/utils/message-parser";
+import { cn } from "@/lib/utils";
 
 export function MessageContent({
   content,
@@ -60,7 +61,10 @@ export function MessageContent({
           },
         });
 
-        setMdxSource({ ...mdxSource, frontmatter: { components: mdxComponents } });
+        setMdxSource({
+          ...mdxSource,
+          frontmatter: { components: mdxComponents },
+        });
         setError(null);
       } catch (err) {
         console.error("Error serializing MDX:", err);
@@ -71,6 +75,24 @@ export function MessageContent({
     }
     serializeMdx();
   }, [content]);
+
+  if (!content) {
+    return (
+      <span className="flex items-center gap-2 p-2">
+        {[1, 2, 3].map((i) => (
+          <span
+            className={cn(
+              "inline-block w-2 h-2 bg-muted rounded-full animate-bounce",
+              i === 1 && "delay-100",
+              i === 2 && "delay-300",
+              i === 3 && "delay-500"
+            )}
+            key={i}
+          ></span>
+        ))}
+      </span>
+    );
+  }
 
   if (!mdxSource) {
     // Fallback to plain text display

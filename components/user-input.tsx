@@ -5,6 +5,8 @@ import { SendHorizontal, FileText } from "lucide-react";
 import { useRef, useEffect, useState } from "react";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
+import { useChatStore } from "@/store/chat-store";
+import { createNewChat } from "@/utils/chat-storage";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -28,6 +30,7 @@ interface UserInputProps {
   isLoading: boolean;
   selectedModel: ModelId;
   onModelChange: (model: ModelId) => void;
+  hideSelector?: boolean;
 }
 
 export default function UserInput({
@@ -36,11 +39,17 @@ export default function UserInput({
   isLoading,
   selectedModel,
   onModelChange,
+  hideSelector,
 }: UserInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const addChat = useChatStore.use.addChat();
 
+  const handleNewChat = () => {
+    const newChat = createNewChat();
+    addChat(newChat);
+  };
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
     if (textarea) {
@@ -56,6 +65,15 @@ export default function UserInput({
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         textareaRef.current?.focus();
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.altKey && e.key === "˚") {
+        console.log("New chat");
+        e.preventDefault();
+        handleNewChat();
+        textareaRef.current?.focus();
+        return;
       }
     };
 
@@ -106,7 +124,9 @@ export default function UserInput({
   return (
     <div className="border-t border-border drop-shadow-md p-4 bg-midground/50">
       <form ref={formRef} action={onSubmit} className="flex gap-4 items-start">
-        <ModelSelector value={selectedModel} onChange={onModelChange} />
+        {!hideSelector && (
+          <ModelSelector value={selectedModel} onChange={onModelChange} />
+        )}
         <div className="flex-1 relative">
           <div className="max-h-[500px] overflow-y-auto flex-1 rounded-lg bg-muted/50 w-full border border-border">
             <Textarea

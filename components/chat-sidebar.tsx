@@ -1,11 +1,13 @@
 "use client";
 
 import { createNewChat } from "@/utils/chat-storage";
-import { PlusIcon, TrashIcon } from "lucide-react";
+import { PlusIcon, Search, SquarePen, TrashIcon, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/store/chat-store";
 import { motion, AnimatePresence } from "framer-motion";
+import { useState } from "react";
+import { Input } from "./ui/input";
 
 export function ChatSidebar() {
   const chats = useChatStore.use.chats();
@@ -13,6 +15,8 @@ export function ChatSidebar() {
   const addChat = useChatStore.use.addChat();
   const deleteChat = useChatStore.use.deleteChat();
   const setCurrentChatId = useChatStore.use.setCurrentChatId();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
 
   const handleNewChat = () => {
     const newChat = createNewChat();
@@ -23,19 +27,74 @@ export function ChatSidebar() {
     deleteChat(chatId);
   };
 
+  const filteredChats = chats.filter((chat) =>
+    chat.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div className="w-64 border-r border-white/10 flex flex-col bg-midground/50">
-      <div className="p-4 border-b border-white/10">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-white/90">Chats</p>
-          <Button onClick={handleNewChat} variant="default" size="icon">
-            <PlusIcon className="w-4 h-4" />
-          </Button>
+    <div className="w-64 border-r border-border flex flex-col bg-midground/50">
+      <div className="p-4 border-b border-border space-y-2">
+        <div className="flex items-center justify-end gap-2">
+          <span className="flex items-center gap-2">
+            <span className="flex-1">
+              <motion.div
+                animate={{
+                  width: isSearching ? "100%" : "32px",
+                  opacity: isSearching ? 1 : 0.7,
+                }}
+                transition={{ duration: 0.2 }}
+                className="relative flex items-center"
+              >
+                <AnimatePresence mode="wait">
+                  {isSearching ? (
+                    <motion.div
+                      key="search-input"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="flex-1 flex items-center w-full"
+                    >
+                      <Input
+                        value={searchQuery}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                          setSearchQuery(e.target.value)
+                        }
+                        placeholder="Search chats..."
+                        className="w-full p-1"
+                      />
+                      <Button
+                        onClick={() => {
+                          setIsSearching(false);
+                          setSearchQuery("");
+                        }}
+                        variant="ghost"
+                        size="icon"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </motion.div>
+                  ) : (
+                    <Button
+                      onClick={() => setIsSearching(true)}
+                      variant="ghost"
+                      size="icon"
+                      className="w-8 h-8"
+                    >
+                      <Search className="w-4 h-4" />
+                    </Button>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            </span>
+            <Button onClick={handleNewChat} variant="ghost" size="icon">
+              <SquarePen className="w-4 h-4" />
+            </Button>
+          </span>
         </div>
       </div>
       <motion.div layout className="flex-1 overflow-y-auto p-2 space-y-2">
         <AnimatePresence mode="popLayout">
-          {chats.map((chat) => (
+          {filteredChats.map((chat) => (
             <motion.div
               layout
               key={chat.id}
@@ -46,7 +105,7 @@ export function ChatSidebar() {
               onClick={() => setCurrentChatId(chat.id)}
               className={cn(
                 "text-primary w-full text-left flex items-center justify-between px-4 py-2 rounded-lg cursor-pointer bg-midground transition-colors border border-border",
-                chat.id === currentChatId && "border-white/50"
+                chat.id === currentChatId && "border-border"
               )}
             >
               <motion.span layout="position" className="truncate">
@@ -57,7 +116,7 @@ export function ChatSidebar() {
                   e.stopPropagation();
                   handleDeleteChat(chat.id);
                 }}
-                variant="destructive"
+                variant="ghost"
                 size="icon"
                 className="bg-transparent hover:bg-destructive"
               >

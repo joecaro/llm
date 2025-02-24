@@ -12,7 +12,7 @@ import { useChatStore } from "@/store/chat-store";
 import useScrollToBottom from "@/lib/use-scroll-to-bottom";
 import { fetchCompletion, streamCompletion } from "@/fetches/completion";
 
-export function MessagesSection() {
+export function MessagesSection({ hideSelector = false, context = "" }: { hideSelector?: boolean, context?: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -71,7 +71,7 @@ export function MessagesSection() {
       streamCompletion({
         model: selectedModel,
         messages: [
-          { role: "system", content: "You are a helpful ai assistant." },
+          { role: "system", content: "You are a helpful ai assistant." + context },
           ...(chat?.messages || []),
           { role: "user", content: userMessage },
         ],
@@ -139,11 +139,10 @@ export function MessagesSection() {
             ))
           ) : (
             <div className="text-primary flex gap-4 items-start w-full">
-              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/90 shrink-0">
+              <div className="w-8 h-8 rounded-full bg-foreground flex items-center justify-center text-white/90 shrink-0">
                 AI
               </div>
               <div className="flex-1 space-y-2 w-full">
-                <p className="text-sm">Assistant</p>
                 <div>
                   <MessageContent
                     content={parseMessageContent(DEFAULT_CHAT_MESSAGE).message}
@@ -171,6 +170,7 @@ export function MessagesSection() {
         isLoading={isLoading}
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
+        hideSelector={hideSelector}
       />
     </div>
   );
