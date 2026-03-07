@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Settings, Moon, Sun } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -17,24 +17,27 @@ import { getLlmConfig, saveLlmConfig, type LlmConfig } from "@/lib/llm-config";
 
 export function SettingsDialog() {
   const [open, setOpen] = useState(false);
-  const [config, setConfig] = useState<LlmConfig>({
+  const [config, setConfig] = useState<LlmConfig>(() => open ? getLlmConfig() : {
     host: "",
     port: "",
     endpoint: "",
   });
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(() => typeof window !== "undefined" && document.documentElement.classList.contains("dark"));
 
-  useEffect(() => {
-    if (open) {
+  const handleOpenChange = (isOpen: boolean) => {
+    setOpen(isOpen);
+    if (isOpen) {
       setConfig(getLlmConfig());
-      setIsDark(document.documentElement.classList.contains("dark"));
+      setIsDark(typeof window !== "undefined" && document.documentElement.classList.contains("dark"));
     }
-  }, [open]);
+  };
 
   const toggleTheme = useCallback(() => {
     const next = !isDark;
     setIsDark(next);
-    document.documentElement.classList.toggle("dark", next);
+    if (typeof window !== "undefined") {
+      document.documentElement.classList.toggle("dark", next);
+    }
     localStorage.setItem("theme", next ? "dark" : "light");
   }, [isDark]);
 
@@ -46,7 +49,7 @@ export function SettingsDialog() {
   const previewUrl = `http://${config.host}${config.port ? `:${config.port}` : ""}${config.endpoint}`;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="icon" className="w-8 h-8">
           <Settings className="w-4 h-4" />

@@ -21,7 +21,6 @@ export function MessageContent({
   content: string;
 }) {
   const codeRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [mdxSource, setMdxSource] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 

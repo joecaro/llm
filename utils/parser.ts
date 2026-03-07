@@ -37,27 +37,26 @@ export class CodingParser extends Parser {
     this.addParser("commented code", this.commentedCodeRegex);
   }
 
-  // @ts-expect-error - CodingParser returns a single result instead of an array
-  parse(content: string): { type: string; value: string; reasoning: string } | null {
+  parse(content: string): { [key: string]: any }[] {
     const codingMatch = content.match(this.codingRegex);
     if (codingMatch) {
-      return {
+      return [{
         type: "coding",
         value: `<code>${content.replace(codingMatch[1] ?? "", "")}</code>`,
         reasoning: `/* ${content.substring(8)} */`,
-      };
+      }];
     }
 
     const commentedMatch = content.match(this.commentedCodeRegex);
     if (commentedMatch) {
-      return {
+      return [{
         type: "commented code",
         value: `<code>${content.replace(commentedMatch[1] ?? "", "")}</code>`,
         reasoning: `/* ${content.substring(11)} */`,
-      };
+      }];
     }
 
     console.error("Invalid content");
-    return null;
+    return [];
   }
 }
