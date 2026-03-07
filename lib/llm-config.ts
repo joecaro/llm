@@ -4,12 +4,14 @@ export interface LlmConfig {
   host: string;
   port: string;
   endpoint: string;
+  https: boolean;
 }
 
 const DEFAULT_CONFIG: LlmConfig = {
   host: "windows-machine",
   port: "8080",
   endpoint: "/v1/chat/completions",
+  https: false,
 };
 
 export function getLlmConfig(): LlmConfig {
@@ -26,7 +28,8 @@ export function saveLlmConfig(config: LlmConfig) {
 }
 
 export function getLlmUrl(): string {
-  const { host, port, endpoint } = getLlmConfig();
+  const { host, port, endpoint, https } = getLlmConfig();
+  const protocol = https ? "https" : "http";
   const portPart = port ? `:${port}` : "";
-  return `http://${host}${portPart}${endpoint}`;
+  return `${protocol}://${host}${portPart}${endpoint}`;
 }
