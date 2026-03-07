@@ -21,7 +21,7 @@ export const fetchCompletion = async (params: {
   messages: Message[];
 }) => {
   try {
-    const response = await fetch("http://127.0.0.1:11434/v1/chat/completions", {
+    const response = await fetch("http://windows-machine:8080/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -54,7 +54,7 @@ export const streamCompletion = async (params: {
 }) => {
   try {
     const prompt = await getPrompt();
-    const response = await fetch("http://127.0.0.1:11434/v1/chat/completions", {
+    const response = await fetch("http://windows-machine:8080/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

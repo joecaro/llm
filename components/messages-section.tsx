@@ -16,7 +16,7 @@ export function MessagesSection({ hideSelector = false, context = "" }: { hideSe
   const formRef = useRef<HTMLFormElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<ModelId>("llama3.2");
+  const [selectedModel, setSelectedModel] = useState<ModelId>("qwen2.5:7b");
   const isStreaming = useRef(false);
 
   const currentChatId = useChatStore.use.currentChatId();

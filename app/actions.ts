@@ -28,7 +28,7 @@ export async function sendMessage(chat: Chat, formData: FormData, model: ModelId
     // Return the URL and the message for the client to make the request
     return {
       success: true,
-      url: 'http://127.0.0.1:11434/v1/chat/completions',
+      url: 'http://windows-machine:8080/v1/chat/completions',
       payload: {
         model,
         messages: [

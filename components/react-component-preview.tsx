@@ -30,8 +30,16 @@ export const ReactComponentPreview: FC<ReactComponentPreviewProps> = ({
   const renderPreview = () => {
     if (!isPreviewVisible) return null;
 
-    // Strip imports and prepare the code
-    const processCode = (code: string) => {
+    // Strip imports and prepare the code, returning [processedCode, componentName]
+    const processCode = (code: string): [string, string | null] => {
+      // Extract component name from export patterns
+      let componentName: string | null = null;
+
+      // Match "export const Name = " or "export default Name"
+      const namedExport = code.match(/export\s+const\s+(\w+)\s*=/);
+      const defaultExport = code.match(/export\s+default\s+(\w+)/);
+      componentName = namedExport?.[1] || defaultExport?.[1] || null;
+
       // Remove import statements
       const codeWithoutImports = code.replace(
         /import\s+.*?from\s+['"].*?['"]/g,
@@ -43,8 +51,10 @@ export const ReactComponentPreview: FC<ReactComponentPreviewProps> = ({
         .replace(/export\s+default\s+\w+/, "")
         .replace(/export\s+const\s+/, "const ");
 
-      return componentCode;
+      return [componentCode, componentName];
     };
+
+    const [processedCode, componentName] = processCode(code);
 
     const iframeContent = `
       <!DOCTYPE html>
@@ -90,71 +100,95 @@ export const ReactComponentPreview: FC<ReactComponentPreviewProps> = ({
         </head>
         <body style="height: 100%;">
           <div style="height: 100%;" id="root"></div>
-          <script type="text/babel">
-            // Mock dependencies and components - define these in the global scope
-            window.cn = (...args) => args.filter(Boolean).join(' ');
-            
-            window.Card = ({ className, children }) => {
-              return React.createElement('div', {
-                className: \`bg-white rounded-lg shadow \${className || ''}\`
-              }, children);
-            };
-            
-            window.CardContent = ({ className, children }) => {
-              return React.createElement('div', {
-                className: \`p-4 \${className || ''}\`
-              }, children);
-            };
-            
-            window.Button = ({ className, children, ...props }) => {
-              return React.createElement('button', {
-                className: \`btn btn-primary \${className || ''}\`,
-                ...props
-              }, children);
-            };
-            
-            window.Input = ({ className, ...props }) => {
-              return React.createElement('input', {
-                className: \`input \${className || ''}\`,
-                ...props
-              });
-            };
-            
-            window.Checkbox = ({ checked, onCheckedChange, className }) => {
-              return React.createElement('input', {
-                type: "checkbox",
-                checked: checked,
-                onChange: (e) => onCheckedChange?.(e.target.checked),
-                className: \`checkbox \${className || ''}\`
-              });
-            };
+          <div id="loading" style="padding: 1rem; color: #888; font-size: 0.875rem;">Loading preview...</div>
+          <script>
+            // Wait for all CDN scripts to load, then transpile and run manually
+            function __run() {
+              document.getElementById('loading').remove();
 
-            try {
-              // Add React import reference
-              const { useState } = React;
-              
-              // Make the components available in the local scope
-              const { Card, CardContent, Button, Input, Checkbox, cn } = window;
+              // Mock UI primitives
+              var cn = function() {
+                return Array.prototype.filter.call(arguments, Boolean).join(' ');
+              };
+              var Card = function(props) {
+                return React.createElement('div', {
+                  className: 'bg-white rounded-lg shadow ' + (props.className || '')
+                }, props.children);
+              };
+              var CardContent = function(props) {
+                return React.createElement('div', {
+                  className: 'p-4 ' + (props.className || '')
+                }, props.children);
+              };
+              var Button = function(props) {
+                var className = props.className, children = props.children;
+                var rest = Object.assign({}, props);
+                delete rest.className; delete rest.children;
+                return React.createElement('button', Object.assign({
+                  className: 'btn btn-primary ' + (className || '')
+                }, rest), children);
+              };
+              var Input = function(props) {
+                var className = props.className;
+                var rest = Object.assign({}, props);
+                delete rest.className;
+                return React.createElement('input', Object.assign({
+                  className: 'input ' + (className || '')
+                }, rest));
+              };
+              var Checkbox = function(props) {
+                return React.createElement('input', {
+                  type: 'checkbox',
+                  checked: props.checked,
+                  onChange: function(e) { props.onCheckedChange && props.onCheckedChange(e.target.checked); },
+                  className: 'checkbox ' + (props.className || '')
+                });
+              };
 
-              ${processCode(code)}
-              
-              const Component = typeof default_1 !== 'undefined' ? default_1 : 
-                              typeof Component !== 'undefined' ? Component :
-                              typeof TodoList !== 'undefined' ? TodoList : null;
-              
-              if (Component) {
-                const element = React.createElement(Component, {});
-                ReactDOM.render(element, document.getElementById('root'));
-              } else {
-                throw new Error('No valid component found to render');
+              var componentCode = ${JSON.stringify(processedCode)};
+              var componentName = ${JSON.stringify(componentName)};
+
+              try {
+                var transpiled = Babel.transform(componentCode, {
+                  presets: ['react', 'typescript'],
+                  filename: 'component.tsx'
+                }).code;
+
+                // Wrap in a function that has access to our mocked components
+                var factory = new Function(
+                  'React', 'useState', 'useEffect', 'useRef', 'useMemo', 'useCallback',
+                  'Card', 'CardContent', 'Button', 'Input', 'Checkbox', 'cn',
+                  transpiled + '\\nreturn typeof ' + componentName + ' !== "undefined" ? ' + componentName + ' : null;'
+                );
+
+                var Component = factory(
+                  React, React.useState, React.useEffect, React.useRef, React.useMemo, React.useCallback,
+                  Card, CardContent, Button, Input, Checkbox, cn
+                );
+
+                if (Component) {
+                  ReactDOM.render(React.createElement(Component, {}), document.getElementById('root'));
+                } else {
+                  throw new Error('No component found: ' + componentName);
+                }
+              } catch (error) {
+                var errorDiv = document.createElement('div');
+                errorDiv.className = 'p-4 text-red-500 text-sm';
+                errorDiv.textContent = 'Error: ' + error.message;
+                document.getElementById('root').appendChild(errorDiv);
+                console.error('Preview error:', error);
               }
-            } catch (error) {
-              const errorDiv = document.createElement('div');
-              errorDiv.className = 'p-4 text-red-500 text-sm';
-              errorDiv.textContent = 'Error: ' + error.message;
-              document.getElementById('root').appendChild(errorDiv);
-              console.error('Preview error:', error);
             }
+
+            // Poll until all dependencies are loaded
+            function __waitForDeps() {
+              if (typeof React !== 'undefined' && typeof ReactDOM !== 'undefined' && typeof Babel !== 'undefined') {
+                __run();
+              } else {
+                setTimeout(__waitForDeps, 50);
+              }
+            }
+            __waitForDeps();
           </script>
         </body>
       </html>
