@@ -1,7 +1,7 @@
 import telephonyOutbound from "./telephony_outbound";
 import helpers from "./helpers";
 import calls from "./calls";
-import livekit from "./livekit";
+
 import appConfig from "./app_config";
 import clientDialer from "./client-dialer";
 import baseDialer from "./base_dialer";

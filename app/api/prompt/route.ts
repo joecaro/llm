@@ -7,7 +7,7 @@ export async function GET() {
     const promptPath = path.join(process.cwd(), "lib", "prompt.txt");
     const prompt = fs.readFileSync(promptPath, "utf8");
     return NextResponse.json({ prompt });
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Failed to load prompt' }, { status: 500 });
   }
 } 

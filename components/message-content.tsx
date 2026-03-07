@@ -17,13 +17,11 @@ import { cn } from "@/lib/utils";
 
 export function MessageContent({
   content,
-  isStreaming,
 }: {
   content: string;
-  isStreaming?: boolean;
 }) {
   const codeRef = useRef<HTMLDivElement>(null);
-  const [mdxSource, setMdxSource] = useState<any>(null);
+  const [mdxSource, setMdxSource] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

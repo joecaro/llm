@@ -1,4 +1,4 @@
-export default [
+const livekitOutboundCallEdges = [
   // LiveKitOutboundCall internal connections
   { id: "e1", source: "run_voice_pipeline_agent", target: "GraphManager", animated: true },
   { id: "e2", source: "run_voice_pipeline_agent", target: "shutdown_hook", animated: true },
@@ -16,4 +16,6 @@ export default [
   // LiveKitCallStatusManager flow
   { id: "e9", source: "manage_call", target: "update_call_state", animated: true },
   { id: "e10", source: "update_call_state", target: "sleep_state", animated: true },
-]; 
+];
+
+export default livekitOutboundCallEdges;

@@ -10,7 +10,6 @@ import {
   addEdge,
   Connection,
   BackgroundVariant,
-  useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Button } from "../ui/button";
@@ -19,7 +18,6 @@ import initialEdges from "./edges";
 import GroupNode from "./group-node";
 import { groupNodesByParent } from "./nodes/utils";
 import FourHandleNode from "./four-handle-node";
-import { MessagesSection } from "../messages-section";
 
 const getId = () => Math.random().toString(36).substring(2, 15);
 
@@ -40,43 +38,40 @@ export default function App() {
     [setEdges]
   );
 
-  const ButtonContainer = () => {
-    const [hidden, setHidden] = useState(true);
-    if (hidden)
-      return <Button onClick={() => setHidden(false)}>Show Buttons</Button>;
-    return (
-      <>
-        <Button onClick={() => groupNodesByParent(nodes)}>Group Nodes</Button>
-        <Button onClick={() => console.log(JSON.stringify(edges))}>
-          Log Edges
-        </Button>
-        <Button
-          onClick={() => {
-            localStorage.setItem("nodes", JSON.stringify(nodes));
-            localStorage.setItem("edges", JSON.stringify(edges));
-          }}
-        >
-          Save to Local Storage
-        </Button>
-        <Button
-          onClick={() => {
-            const nodes = JSON.parse(localStorage.getItem("nodes") || "[]");
-            const edges = JSON.parse(localStorage.getItem("edges") || "[]");
-            setNodes(nodes);
-            setEdges(edges);
-          }}
-        >
-          Load from Local Storage
-        </Button>
-        <Button onClick={() => setHidden(true)}>Hide Buttons</Button>
-      </>
-    );
-  };
+  const [buttonsHidden, setButtonsHidden] = useState(true);
 
   return (
     <div style={{ width: "100vw", height: "100vh" }}>
       <div className="flex gap-2 absolute top-0 left-0 z-50">
-        <ButtonContainer />
+        {buttonsHidden ? (
+          <Button onClick={() => setButtonsHidden(false)}>Show Buttons</Button>
+        ) : (
+          <>
+            <Button onClick={() => groupNodesByParent(nodes)}>Group Nodes</Button>
+            <Button onClick={() => console.log(JSON.stringify(edges))}>
+              Log Edges
+            </Button>
+            <Button
+              onClick={() => {
+                localStorage.setItem("nodes", JSON.stringify(nodes));
+                localStorage.setItem("edges", JSON.stringify(edges));
+              }}
+            >
+              Save to Local Storage
+            </Button>
+            <Button
+              onClick={() => {
+                const savedNodes = JSON.parse(localStorage.getItem("nodes") || "[]");
+                const savedEdges = JSON.parse(localStorage.getItem("edges") || "[]");
+                setNodes(savedNodes);
+                setEdges(savedEdges);
+              }}
+            >
+              Load from Local Storage
+            </Button>
+            <Button onClick={() => setButtonsHidden(true)}>Hide Buttons</Button>
+          </>
+        )}
       </div>
       <ReactFlow
         nodes={nodes}

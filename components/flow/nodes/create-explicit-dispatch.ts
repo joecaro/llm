@@ -1,4 +1,4 @@
-export default [
+const createExplicitDispatch = [
   {
     id: "create_explicit_dispatch",
     type: "groupNode",
@@ -32,3 +32,5 @@ export default [
     parentId: "create_explicit_dispatch",
   },
 ];
+
+export default createExplicitDispatch;

@@ -2,7 +2,7 @@ import { RefObject } from "react";
 import { ModelSelector, ModelId } from "./model-selector";
 import { useFormStatus } from "react-dom";
 import { SendHorizontal, FileText } from "lucide-react";
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { useChatStore } from "@/store/chat-store";
@@ -43,13 +43,13 @@ export default function UserInput({
 }: UserInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
   const addChat = useChatStore.use.addChat();
 
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     const newChat = createNewChat();
     addChat(newChat);
-  };
+  }, [addChat]);
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
     if (textarea) {
@@ -79,7 +79,7 @@ export default function UserInput({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [handleNewChat]);
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Submit on Enter (but not with Shift)
@@ -101,7 +101,6 @@ export default function UserInput({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type === "text/plain") {
-      setSelectedFile(file);
       const reader = new FileReader();
       reader.onload = async (e) => {
         const content = e.target?.result as string;
@@ -155,7 +154,7 @@ export default function UserInput({
         </div>
         <SubmitButton />
       </form>
-      <ModelSelector value={selectedModel} onChange={onModelChange} />
+      {!hideSelector && <ModelSelector value={selectedModel} onChange={onModelChange} />}
     </div>
   );
 }

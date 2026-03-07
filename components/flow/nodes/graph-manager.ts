@@ -1,4 +1,4 @@
-export default [
+const graphManager = [
   {
     id: "graph_manager_group",
     type: "groupNode",
@@ -37,3 +37,5 @@ export default [
     parentId: "graph_manager_group",
   },
 ];
+
+export default graphManager;
