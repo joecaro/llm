@@ -11,10 +11,10 @@ export function MessageReasoning({ content }: { content: string }) {
   if (!reasoning) return null;
 
   return (
-    <div className="mt-2 border-t border-white/10">
+    <div className="mt-2 border-t border-border">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-2 text-sm text-white/50 hover:text-white/70 transition py-2"
+        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition py-2"
       >
         {isExpanded ? (
           <ChevronUp className="w-4 h-4 transition-transform duration-200" />
@@ -23,13 +23,13 @@ export function MessageReasoning({ content }: { content: string }) {
         )}
         Reasoning
       </button>
-      
+
       <div
         className={`overflow-hidden transition-all duration-500 ease-in-out ${
           isExpanded ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
         }`}
       >
-        <div className="pb-2 text-sm text-white/70 whitespace-pre-wrap">
+        <div className="pb-2 text-sm text-muted-foreground whitespace-pre-wrap">
           {reasoning}
         </div>
       </div>

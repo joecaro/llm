@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, devtools } from "zustand/middleware";
-import { Chat, ChatMessage } from "@/types/chat";
+import { Chat, ChatMessage, ChatSession } from "@/types/chat";
 
 interface ChatStore {
   chats: Chat[];
@@ -17,7 +17,25 @@ interface ChatStore {
     messageId: string,
     content: string
   ) => void;
+  compactChat: (chatId: string, summary: string) => void;
+  clearMessagesInChat: (chatId: string) => void;
 }
+
+function getCurrentSession(chat: Chat): ChatSession {
+  if (chat.sessions && chat.sessions.length > 0) {
+    return chat.sessions[chat.sessions.length - 1];
+  }
+  return { id: "default", messages: chat.messages };
+}
+
+function getAllMessages(chat: Chat): ChatMessage[] {
+  if (chat.sessions && chat.sessions.length > 0) {
+    return chat.sessions.flatMap((s) => s.messages);
+  }
+  return chat.messages;
+}
+
+export { getCurrentSession, getAllMessages };
 
 const useChatStoreBase = create<ChatStore>()(
   devtools(
@@ -32,10 +50,11 @@ const useChatStoreBase = create<ChatStore>()(
             currentChatId: chat.id,
           })),
         createNewChat: () => {
-          const newChat = {
+          const newChat: Chat = {
             id: crypto.randomUUID(),
             title: "New Chat",
             messages: [],
+            sessions: [{ id: crypto.randomUUID(), messages: [] }],
             createdAt: Date.now(),
           };
 
@@ -64,19 +83,66 @@ const useChatStoreBase = create<ChatStore>()(
           })),
         addMessageToChat: (chatId, message) =>
           set((state) => ({
-            chats: state.chats.map((c) =>
-              c.id === chatId ? { ...c, messages: [...c.messages, message] } : c
-            ),
+            chats: state.chats.map((c) => {
+              if (c.id !== chatId) return c;
+              if (c.sessions && c.sessions.length > 0) {
+                const sessions = [...c.sessions];
+                const last = { ...sessions[sessions.length - 1] };
+                last.messages = [...last.messages, message];
+                sessions[sessions.length - 1] = last;
+                return { ...c, sessions, messages: getAllMessagesFromSessions(sessions) };
+              }
+              return { ...c, messages: [...c.messages, message] };
+            }),
           })),
         updateMessageInChat: (chatId, messageId, content) =>
+          set((state) => ({
+            chats: state.chats.map((c) => {
+              if (c.id !== chatId) return c;
+              if (c.sessions && c.sessions.length > 0) {
+                const sessions = c.sessions.map((s) => ({
+                  ...s,
+                  messages: s.messages.map((m) =>
+                    m.id === messageId ? { ...m, content } : m
+                  ),
+                }));
+                return { ...c, sessions, messages: getAllMessagesFromSessions(sessions) };
+              }
+              return {
+                ...c,
+                messages: c.messages.map((m) =>
+                  m.id === messageId ? { ...m, content } : m
+                ),
+              };
+            }),
+          })),
+        compactChat: (chatId, summary) =>
+          set((state) => ({
+            chats: state.chats.map((c) => {
+              if (c.id !== chatId) return c;
+              const oldSessions = c.sessions && c.sessions.length > 0
+                ? c.sessions
+                : [{ id: "migrated", messages: c.messages }];
+              // Mark the last session with the summary
+              const archivedSessions = oldSessions.map((s, i) =>
+                i === oldSessions.length - 1 ? { ...s, summary } : s
+              );
+              const newSession: ChatSession = {
+                id: crypto.randomUUID(),
+                messages: [],
+              };
+              const sessions = [...archivedSessions, newSession];
+              return { ...c, sessions, messages: getAllMessagesFromSessions(sessions) };
+            }),
+          })),
+        clearMessagesInChat: (chatId) =>
           set((state) => ({
             chats: state.chats.map((c) =>
               c.id === chatId
                 ? {
                     ...c,
-                    messages: c.messages.map((m) =>
-                      m.id === messageId ? { ...m, content } : m
-                    ),
+                    messages: [],
+                    sessions: [{ id: crypto.randomUUID(), messages: [] }],
                   }
                 : c
             ),
@@ -88,6 +154,10 @@ const useChatStoreBase = create<ChatStore>()(
     )
   )
 );
+
+function getAllMessagesFromSessions(sessions: ChatSession[]): ChatMessage[] {
+  return sessions.flatMap((s) => s.messages);
+}
 
 import { StoreApi, UseBoundStore } from "zustand";
 

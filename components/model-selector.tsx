@@ -56,7 +56,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
           variant="default"
           role="combobox"
           aria-expanded={open}
-          className="w-[200px] bg-muted/50 justify-between"
+          className="w-auto bg-muted/50 justify-between"
         >
           {value
             ? models.find((model) => model.value === value)?.label
@@ -66,9 +66,9 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
       </PopoverTrigger>
       <PopoverContent className="w-[200px] p-0">
         <Command>
-          <CommandInput placeholder="Search framework..." />
+          <CommandInput placeholder="Search model..." />
           <CommandList>
-            <CommandEmpty>No framework found.</CommandEmpty>
+            <CommandEmpty>No model found.</CommandEmpty>
             <CommandGroup>
               {models.map((model) => (
                 <CommandItem

@@ -7,10 +7,17 @@ export type ChatState = {
   messages: Message[];
 }
 
+export interface ChatSession {
+  id: string;
+  messages: ChatMessage[];
+  summary?: string;
+}
+
 export interface Chat {
   id: string;
   title: string;
   messages: ChatMessage[];
+  sessions?: ChatSession[];
   createdAt: number;
   modelId?: string;
 }
@@ -20,4 +27,4 @@ export interface ChatMessage {
   content: string;
   role: 'user' | 'assistant';
   createdAt: number;
-} 
+}

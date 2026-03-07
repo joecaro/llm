@@ -8,8 +8,13 @@ import { useChatStore } from "@/store/chat-store";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { Input } from "./ui/input";
+import { SettingsDialog } from "./settings-dialog";
 
-export function ChatSidebar() {
+interface ChatSidebarProps {
+  onClose?: () => void;
+}
+
+export function ChatSidebar({ onClose }: ChatSidebarProps) {
   const chats = useChatStore.use.chats();
   const currentChatId = useChatStore.use.currentChatId();
   const addChat = useChatStore.use.addChat();
@@ -32,7 +37,7 @@ export function ChatSidebar() {
   );
 
   return (
-    <div className="w-64 border-r border-border flex flex-col bg-midground/50">
+    <div className="w-64 h-full border-r border-border flex flex-col bg-background">
       <div className="p-4 border-b border-border space-y-2">
         <div className="flex items-center justify-end gap-2">
           <span className="flex items-center gap-2">
@@ -102,7 +107,10 @@ export function ChatSidebar() {
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: -20, scale: 0.9 }}
               transition={{ duration: 0.2 }}
-              onClick={() => setCurrentChatId(chat.id)}
+              onClick={() => {
+                setCurrentChatId(chat.id);
+                onClose?.();
+              }}
               className={cn(
                 "text-primary w-full text-left flex items-center justify-between px-4 py-2 rounded-lg cursor-pointer bg-midground transition-colors border border-border",
                 chat.id === currentChatId && "border-border"
@@ -126,6 +134,9 @@ export function ChatSidebar() {
           ))}
         </AnimatePresence>
       </motion.div>
+      <div className="p-4 border-t border-border">
+        <SettingsDialog />
+      </div>
     </div>
   );
 }

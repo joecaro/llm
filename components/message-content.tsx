@@ -97,21 +97,21 @@ export function MessageContent({
   if (!mdxSource) {
     // Fallback to plain text display
     return (
-      <div className="border p-2 text-primary border-neutral-600 bg-muted/50 rounded-lg shadow">
-        <pre className="whitespace-pre-wrap">{content}</pre>
+      <div className="border p-2 text-primary border-border bg-muted/50 rounded-lg shadow overflow-hidden">
+        <pre className="whitespace-pre-wrap break-words">{content}</pre>
       </div>
     );
   }
 
   return (
     <div
-      className="w-full border p-2 text-primary border-border bg-muted/50 rounded-lg shadow overflow-x-auto max-w-[1100px] prose prose-invert prose-pre:bg-neutral-900 prose-pre:border prose-pre:border-neutral-800 prose-pre:rounded-md prose-pre:p-4 prose-code:text-pink-400 prose-code:before:content-none prose-code:after:content-none prose-headings:text-primary prose-a:text-blue-400 prose-strong:text-primary prose-em:text-primary prose-blockquote:text-neutral-300 prose-blockquote:border-l-4 prose-blockquote:border-neutral-700 prose-blockquote:pl-4 prose-blockquote:italic"
+      className="w-full border p-2 text-primary border-border bg-muted/50 rounded-lg shadow overflow-hidden max-w-full prose dark:prose-invert prose-pre:bg-muted prose-pre:border prose-pre:border-border prose-pre:rounded-md prose-pre:p-4 prose-pre:overflow-x-auto prose-code:text-pink-500 dark:prose-code:text-pink-400 prose-code:before:content-none prose-code:after:content-none prose-headings:text-primary prose-a:text-blue-500 dark:prose-a:text-blue-400 prose-strong:text-primary prose-em:text-primary prose-blockquote:text-muted-foreground prose-blockquote:border-l-4 prose-blockquote:border-border prose-blockquote:pl-4 prose-blockquote:italic"
       ref={codeRef}
     >
       <MDXRemote {...mdxSource} components={mdxSource.frontmatter.components} />
-      {error || !mdxSource ? (
-        <div className="absolute top-0 right-0 px-2">Rendering Error</div>
-      ) : null}
+      {error && (
+        <div className="text-xs text-destructive mt-2">Rendering Error: {error}</div>
+      )}
     </div>
   );
 }

@@ -44,7 +44,7 @@
     --text-primary: 220 10% 8%;
     --text-secondary: 220 10% 30%;
   }
-  .dark :root {
+  .dark {
     --background: 220 10% 15%;
     --midground: 220 10% 20%;
     --foreground: 220 10% 98%;
@@ -92,7 +92,14 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+.prose pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
 
+.prose code {
+  word-break: break-word;
+}
 
 @layer base {
   * {

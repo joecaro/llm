@@ -122,16 +122,13 @@ export default function UserInput({
   };
 
   return (
-    <div className="border-t border-border drop-shadow-md p-4 bg-midground/50">
-      <form ref={formRef} action={onSubmit} className="flex gap-4 items-start">
-        {!hideSelector && (
-          <ModelSelector value={selectedModel} onChange={onModelChange} />
-        )}
-        <div className="flex-1 relative">
+    <div className="border-t border-border drop-shadow-md p-2 md:p-4 bg-midground/50 flex gap-2">
+      <form ref={formRef} action={onSubmit} className="flex gap-2 flex-1 items-start">
+        <div className="flex-1 relative min-w-0">
           <div className="max-h-[500px] overflow-y-auto flex-1 rounded-lg bg-muted/50 w-full border border-border">
             <Textarea
               name="message"
-              placeholder="Message... (⌘K to focus, ↵ to send, shift+↵ for newline)"
+              placeholder="Message... (⌘K to focus, ↵ to send)"
               className="focus:outline-none focus:ring-1 focus:ring-ring text-sm text-foreground placeholder:text-muted-foreground resize-none min-h-[44px] overflow-hidden"
               disabled={isLoading}
               onKeyDown={handleKeyPress}
@@ -158,6 +155,7 @@ export default function UserInput({
         </div>
         <SubmitButton />
       </form>
+      <ModelSelector value={selectedModel} onChange={onModelChange} />
     </div>
   );
 }

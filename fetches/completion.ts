@@ -1,4 +1,5 @@
 import { Message } from "@/types/chat";
+import { getLlmUrl } from "@/lib/llm-config";
 
 let PROMPT: string | null = null;
 
@@ -21,7 +22,7 @@ export const fetchCompletion = async (params: {
   messages: Message[];
 }) => {
   try {
-    const response = await fetch("http://windows-machine:8080/v1/chat/completions", {
+    const response = await fetch(getLlmUrl(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -47,14 +48,22 @@ export const fetchCompletion = async (params: {
   }
 };
 
+export interface StreamStats {
+  tokensPerSecond: number;
+  totalTokens: number;
+  elapsed: number;
+  done: boolean;
+}
+
 export const streamCompletion = async (params: {
   model: string;
   messages: Message[];
   update: (content: string) => void;
+  onStats?: (stats: StreamStats) => void;
 }) => {
   try {
     const prompt = await getPrompt();
-    const response = await fetch("http://windows-machine:8080/v1/chat/completions", {
+    const response = await fetch(getLlmUrl(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -73,6 +82,8 @@ export const streamCompletion = async (params: {
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
     let streamedContent = "";
+    let tokenCount = 0;
+    const startTime = performance.now();
 
     if (reader) {
       while (true) {
@@ -90,14 +101,31 @@ export const streamCompletion = async (params: {
             const json = JSON.parse(jsonString);
 
             if (json.choices?.[0]?.delta?.content) {
+              tokenCount++;
               streamedContent += json.choices[0].delta.content;
               params.update(streamedContent);
+
+              const elapsed = (performance.now() - startTime) / 1000;
+              params.onStats?.({
+                tokensPerSecond: elapsed > 0 ? tokenCount / elapsed : 0,
+                totalTokens: tokenCount,
+                elapsed,
+                done: false,
+              });
             }
           } catch (e) {
             console.error("Error parsing JSON:", e);
           }
         }
       }
+
+      const elapsed = (performance.now() - startTime) / 1000;
+      params.onStats?.({
+        tokensPerSecond: elapsed > 0 ? tokenCount / elapsed : 0,
+        totalTokens: tokenCount,
+        elapsed,
+        done: true,
+      });
     }
   } catch (e) {
     if (e instanceof Error) throw e;
