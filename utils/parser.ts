@@ -28,29 +28,36 @@ export class Parser {
 }
 
 export class CodingParser extends Parser {
+  private codingRegex = /<code>(.*?)<\/code>/g;
+  private commentedCodeRegex = /\{\{ coding (.*?) \}\}/g;
+
   constructor() {
     super();
-    this.addParser("coding", /<code>(.*?)<\/code>/g);
-    this.addParser("commented code", /\{\{ coding (.*?) \}\}/g);
+    this.addParser("coding", this.codingRegex);
+    this.addParser("commented code", this.commentedCodeRegex);
   }
 
-  parse(content: string): any {
-    const match = content.match(this.parsers["coding"][0]);
-    if (match) {
+  // @ts-expect-error - CodingParser returns a single result instead of an array
+  parse(content: string): { type: string; value: string; reasoning: string } | null {
+    const codingMatch = content.match(this.codingRegex);
+    if (codingMatch) {
       return {
         type: "coding",
-        value: `<code>${content.replace(match[1], "")}</code>`,
-        reasoning: `/* ${content.substring(8)} */`, // 8 is the length of '<code>'
+        value: `<code>${content.replace(codingMatch[1] ?? "", "")}</code>`,
+        reasoning: `/* ${content.substring(8)} */`,
       };
-    } else if (match = content.match(this.parsers["commented code"][0])) {
+    }
+
+    const commentedMatch = content.match(this.commentedCodeRegex);
+    if (commentedMatch) {
       return {
         type: "commented code",
-        value: `<code>${content.replace(match[1], "")}</code>`,
-        reasoning: `/* ${content.substring(11)} */`, // 11 is the length of '<{'
+        value: `<code>${content.replace(commentedMatch[1] ?? "", "")}</code>`,
+        reasoning: `/* ${content.substring(11)} */`,
       };
-    } else {
-      console.error("Invalid content");
-      return null;
     }
+
+    console.error("Invalid content");
+    return null;
   }
 }
