@@ -12,67 +12,95 @@ import "prismjs/components/prism-json";
 import "prismjs/components/prism-python";
 import remarkGfm from "remark-gfm";
 import { ReactComponentPreview } from "./react-component-preview";
+import { ArtifactRef as ArtifactRefComponent } from "./artifact-ref";
 import { parseMessageContent } from "@/utils/message-parser";
 import { cn } from "@/lib/utils";
 
 export function MessageContent({
   content,
+  chatId: _chatId,
+  messageId: _messageId,
 }: {
   content: string;
+  chatId?: string;
+  messageId?: string;
 }) {
   const codeRef = useRef<HTMLDivElement>(null);
   const [mdxSource, setMdxSource] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const serializingRef = useRef(false);
+  const latestContentRef = useRef(content);
+  latestContentRef.current = content;
+
+  const runSerializeRef = useRef(async function runSerialize(text: string) {
+    if (typeof text !== "string" || !text.trim()) {
+      setMdxSource(null);
+      return;
+    }
+
+    serializingRef.current = true;
+    try {
+      const { message, components = [], artifactRefs = [] } = parseMessageContent(text);
+
+      const mdxComponents = {
+        ReactComponent: ({ index }: { index: string }) => {
+          const component = components[parseInt(index, 10)];
+          return component ? (
+            <ReactComponentPreview code={component.code} />
+          ) : null;
+        },
+        ArtifactRef: ({ index }: { index: string }) => {
+          const artifactRef = artifactRefs[parseInt(index, 10)];
+          return artifactRef ? <ArtifactRefComponent path={artifactRef.path} /> : null;
+        },
+      };
+
+      const result = await serialize(message, {
+        mdxOptions: {
+          remarkPlugins: [remarkGfm],
+          format: "mdx",
+        },
+      });
+
+      setMdxSource({
+        ...result,
+        frontmatter: { components: mdxComponents },
+      });
+      setError(null);
+    } catch (err) {
+      console.error("Error serializing MDX:", err);
+      setError(
+        err instanceof Error ? err.message : "Error processing content"
+      );
+    } finally {
+      serializingRef.current = false;
+    }
+
+    if (latestContentRef.current !== text) {
+      runSerializeRef.current(latestContentRef.current);
+    }
+  });
 
   useEffect(() => {
-    if (codeRef.current) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(() => {
+      if (serializingRef.current) return;
+      runSerializeRef.current(latestContentRef.current);
+    }, 300);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [content]);
+
+  // Only run Prism after MDX renders, not on every content change
+  useEffect(() => {
+    if (mdxSource && codeRef.current) {
       Prism.highlightAllUnder(codeRef.current, true);
     }
-  }, [content]);
-
-  useEffect(() => {
-    async function serializeMdx() {
-      try {
-        // Ensure content is a string and not empty
-        if (typeof content !== "string" || !content.trim()) {
-          setMdxSource(null);
-          return;
-        }
-
-        // Parse the content to extract React components
-        const { message, components = [] } = parseMessageContent(content);
-
-        // Create a components object for MDX
-        const mdxComponents = {
-          ReactComponent: ({ index }: { index: string }) => {
-            const component = components[parseInt(index, 10)];
-            return component ? (
-              <ReactComponentPreview code={component.code} />
-            ) : null;
-          },
-        };
-
-        const mdxSource = await serialize(message, {
-          mdxOptions: {
-            remarkPlugins: [remarkGfm],
-            format: "mdx",
-          },
-        });
-
-        setMdxSource({
-          ...mdxSource,
-          frontmatter: { components: mdxComponents },
-        });
-        setError(null);
-      } catch (err) {
-        console.error("Error serializing MDX:", err);
-        setError(
-          err instanceof Error ? err.message : "Error processing content"
-        );
-      }
-    }
-    serializeMdx();
-  }, [content]);
+  }, [mdxSource]);
 
   if (!content) {
     return (
@@ -93,7 +121,6 @@ export function MessageContent({
   }
 
   if (!mdxSource) {
-    // Fallback to plain text display
     return (
       <div className="border p-2 text-primary border-border bg-muted/50 rounded-lg shadow overflow-hidden">
         <pre className="whitespace-pre-wrap break-words">{content}</pre>

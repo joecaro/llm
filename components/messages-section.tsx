@@ -1,33 +1,56 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MessageContent } from "./message-content";
 import { MessageReasoning } from "./message-reasoning";
+import { ArtifactStatusRow } from "./artifact-status-row";
 import { parseMessageContent } from "@/utils/message-parser";
 import UserInput from "./user-input";
 import { ModelId } from "./model-selector";
 import { DEFAULT_CHAT_MESSAGE } from "@/utils/constants";
-import { useChatStore, getCurrentSession, getAllMessages } from "@/store/chat-store";
+import { getAllMessages, getCurrentSession, useChatStore } from "@/store/chat-store";
 import useScrollToBottom from "@/lib/use-scroll-to-bottom";
 import { fetchCompletion, streamCompletion, type StreamStats } from "@/fetches/completion";
 import { ChatStatsBar } from "./chat-stats-bar";
-import type { ChatSession } from "@/types/chat";
+import { runArtifactAwareTurn, type ArtifactLoopStatus } from "@/lib/artifact-orchestrator";
+import { isArtifactPreviewable } from "@/utils/artifact-apply";
+import type { ChatMessage, ChatSession } from "@/types/chat";
 
-export function MessagesSection({ hideSelector = false, context = "" }: { hideSelector?: boolean, context?: string }) {
+export function MessagesSection({
+  hideSelector = false,
+  context = "",
+}: {
+  hideSelector?: boolean;
+  context?: string;
+}) {
   const formRef = useRef<HTMLFormElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const currentChatIdRef = useRef<string | null>(null);
+  const isStreaming = useRef(false);
+
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState<ModelId>("qwen2.5:7b");
   const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
-  const isStreaming = useRef(false);
+  const [artifactStatus, setArtifactStatus] = useState<ArtifactLoopStatus | null>(null);
 
+  const chats = useChatStore.use.chats();
   const currentChatId = useChatStore.use.currentChatId();
   const addMessageToChat = useChatStore.use.addMessageToChat();
   const updateMessageInChat = useChatStore.use.updateMessageInChat();
   const updateChatTitle = useChatStore.use.updateChatTitle();
   const compactChat = useChatStore.use.compactChat();
   const clearMessagesInChat = useChatStore.use.clearMessagesInChat();
-  const chat = useChatStore.use.chats().find((c) => c.id === currentChatId);
+  const createNewChat = useChatStore.use.createNewChat();
+  const setChatArtifacts = useChatStore.use.setChatArtifacts();
+  const setArtifactPanelOpen = useChatStore.use.setArtifactPanelOpen();
+  const setActiveArtifactPath = useChatStore.use.setActiveArtifactPath();
+  const setArtifactView = useChatStore.use.setArtifactView();
+
+  const chat = chats.find((candidate) => candidate.id === currentChatId);
+
+  useEffect(() => {
+    currentChatIdRef.current = currentChatId;
+  }, [currentChatId]);
 
   useScrollToBottom({
     chatContainerRef,
@@ -35,13 +58,14 @@ export function MessagesSection({ hideSelector = false, context = "" }: { hideSe
     chat,
   });
 
-  const createNewChat = useChatStore.use.createNewChat();
-
   const allMessages = chat ? getAllMessages(chat) : [];
   const currentSession = chat ? getCurrentSession(chat) : null;
-  const sessions: ChatSession[] = chat?.sessions && chat.sessions.length > 0
-    ? chat.sessions
-    : chat?.messages.length ? [{ id: "default", messages: chat.messages }] : [];
+  const sessions: ChatSession[] =
+    chat?.sessions && chat.sessions.length > 0
+      ? chat.sessions
+      : chat?.messages.length
+        ? [{ id: "default", messages: chat.messages }]
+        : [];
 
   async function handleSubmit(formData: FormData) {
     const userMessage = formData.get("message") as string;
@@ -49,88 +73,127 @@ export function MessagesSection({ hideSelector = false, context = "" }: { hideSe
 
     formRef.current?.reset();
 
-    // Intercept "compact" command
     if (userMessage.trim().toLowerCase() === "compact") {
       await handleCompact();
       return;
     }
 
-    const userMessageId = crypto.randomUUID();
-    const userMessageObj = {
-      id: userMessageId,
-      role: "user" as const,
+    const currentChat = chat ?? createNewChat();
+    currentChatIdRef.current = currentChat.id;
+    const currentMessages = currentSession?.messages ?? [];
+    const userMessageObj: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
       content: userMessage,
       createdAt: Date.now(),
     };
 
-    const currentChat = chat || createNewChat();
     addMessageToChat(currentChat.id, userMessageObj);
 
-    const currentMessages = currentSession?.messages || [];
     if (currentMessages.length === 0 && (!chat?.sessions || chat.sessions.length <= 1)) {
       fetchTitle(currentChat.id, userMessage);
     }
 
-    setIsLoading(true);
-    isStreaming.current = true;
-
     const assistantMessageId = crypto.randomUUID();
-    const assistantMessageObj = {
-      id: assistantMessageId,
-      role: "assistant" as const,
-      content: "",
-      createdAt: Date.now(),
-    };
-
-    addMessageToChat(currentChat.id, assistantMessageObj);
-
-    // Build LLM messages from current session only (+ summary from previous sessions)
-    const sessionMessages = currentSession?.messages || [];
     const previousSummary = chat?.sessions
-      ?.filter((s) => s.summary)
-      .map((s) => s.summary)
+      ?.filter((session) => session.summary)
+      .map((session) => session.summary)
       .join("\n\n");
-
     const systemContent = [
       "You are a helpful ai assistant." + context,
       previousSummary ? `\n\nPrevious conversation summary:\n${previousSummary}` : "",
     ].join("");
 
+    setIsLoading(true);
+    isStreaming.current = true;
     setStreamStats(null);
+    setArtifactStatus({
+      pass: 1,
+      phase: "thinking",
+      message: "Thinking (1/4)",
+    });
+
+    addMessageToChat(currentChat.id, {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      createdAt: Date.now(),
+    });
+
     try {
-      await streamCompletion({
+      const result = await runArtifactAwareTurn({
         model: selectedModel,
-        messages: [
-          { role: "system", content: systemContent },
-          ...sessionMessages.map((m) => ({ role: m.role, content: m.content })),
-          { role: "user", content: userMessage },
-        ],
-        update: (str) =>
-          updateMessageInChat(currentChat.id, assistantMessageId, str),
-        onStats: setStreamStats,
-      });
-    } catch (error) {
-      console.error("Error reading stream:", error);
-      updateMessageInChat(
-        currentChat.id,
+        systemContent,
+        sessionMessages: currentMessages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+        userMessage,
+        artifacts: currentChat.artifacts,
         assistantMessageId,
-        "Sorry, I encountered an error while streaming the response."
-      );
+        onStatus: setArtifactStatus,
+        onStats: setStreamStats,
+        onVisibleContent: (content) => {
+          if (currentChatIdRef.current !== currentChat.id) return;
+          updateMessageInChat(currentChat.id, assistantMessageId, content);
+        },
+        isCancelled: () => currentChatIdRef.current !== currentChat.id,
+      });
+
+      if (currentChatIdRef.current !== currentChat.id) {
+        return;
+      }
+
+      updateMessageInChat(currentChat.id, assistantMessageId, result.content);
+
+      if (result.changedPaths.length > 0) {
+        setChatArtifacts(currentChat.id, result.artifacts);
+
+        const lastChangedPath =
+          result.changedPaths[result.changedPaths.length - 1] ?? null;
+
+        if (lastChangedPath) {
+          const artifact = result.artifacts.files[lastChangedPath];
+          setActiveArtifactPath(lastChangedPath);
+          setArtifactView(
+            artifact && isArtifactPreviewable(artifact.language) ? "preview" : "code"
+          );
+          setArtifactPanelOpen(true);
+        }
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "cancelled"
+      ) {
+        return;
+      }
+
+      console.error("Error running artifact-aware turn:", error);
+
+      if (currentChatIdRef.current === currentChat.id) {
+        updateMessageInChat(
+          currentChat.id,
+          assistantMessageId,
+          "Sorry, I encountered an error while generating the response."
+        );
+      }
     } finally {
       isStreaming.current = false;
+      setArtifactStatus(null);
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   }
 
   async function handleCompact() {
     if (!currentChatId) return;
-    const currentChat = chat || createNewChat();
-    const currentMessages = currentSession?.messages || [];
+
+    const currentChat = chat ?? createNewChat();
+    currentChatIdRef.current = currentChat.id;
+    const currentMessages = currentSession?.messages ?? [];
 
     if (currentMessages.length < 2) return;
 
-    // Add the user "compact" message visibly
     const userMsgId = crypto.randomUUID();
     addMessageToChat(currentChat.id, {
       id: userMsgId,
@@ -139,7 +202,6 @@ export function MessagesSection({ hideSelector = false, context = "" }: { hideSe
       createdAt: Date.now(),
     });
 
-    // Add an empty assistant message to stream the summary into
     const summaryMsgId = crypto.randomUUID();
     addMessageToChat(currentChat.id, {
       id: summaryMsgId,
@@ -153,6 +215,7 @@ export function MessagesSection({ hideSelector = false, context = "" }: { hideSe
     setStreamStats(null);
 
     let summary = "";
+
     try {
       await streamCompletion({
         model: selectedModel,
@@ -165,13 +228,13 @@ export function MessagesSection({ hideSelector = false, context = "" }: { hideSe
           {
             role: "user",
             content: currentMessages
-              .map((m) => `${m.role}: ${m.content}`)
+              .map((message) => `${message.role}: ${message.content}`)
               .join("\n\n"),
           },
         ],
-        update: (str) => {
-          summary = str;
-          updateMessageInChat(currentChat.id, summaryMsgId, str);
+        update: (content) => {
+          summary = content;
+          updateMessageInChat(currentChat.id, summaryMsgId, content);
         },
         onStats: setStreamStats,
       });
@@ -189,8 +252,6 @@ export function MessagesSection({ hideSelector = false, context = "" }: { hideSe
 
     isStreaming.current = false;
     setIsLoading(false);
-
-    // Now compact — archives current session with summary, starts fresh
     compactChat(currentChatId, summary);
   }
 
@@ -237,7 +298,10 @@ export function MessagesSection({ hideSelector = false, context = "" }: { hideSe
                     </div>
                   )}
                   {session.messages.map((message) => (
-                    <div key={message.id} className="flex gap-3 md:gap-4 items-start w-full mb-4">
+                    <div
+                      key={message.id}
+                      className="flex gap-3 md:gap-4 items-start w-full mb-4"
+                    >
                       <div
                         className={`w-8 h-8 rounded-full text-xs font-medium text-primary ${
                           message.role === "assistant" ? "bg-muted" : "bg-muted/70"
@@ -247,7 +311,11 @@ export function MessagesSection({ hideSelector = false, context = "" }: { hideSe
                       </div>
                       <div className="flex-1 min-w-0 space-y-2">
                         <MessageReasoning content={message.content} />
-                        <MessageContent content={message.content} />
+                        <MessageContent
+                          content={message.content}
+                          chatId={chat?.id}
+                          messageId={message.id}
+                        />
                       </div>
                     </div>
                   ))}
@@ -266,25 +334,27 @@ export function MessagesSection({ hideSelector = false, context = "" }: { hideSe
               </div>
             </div>
           )}
-          {isLoading && !allMessages[allMessages.length - 1]?.content && (
-            <div className="flex gap-4 items-start">
+
+          {artifactStatus && (
+            <div className="flex gap-3 md:gap-4 items-start w-full">
               <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-primary text-xs font-medium shrink-0">
                 AI
               </div>
-              <div className="flex-1 space-y-2">
-                <p className="text-sm">Assistant</p>
-                <div className="text-sm">...</div>
+              <div className="flex-1 min-w-0">
+                <ArtifactStatusRow status={artifactStatus} />
               </div>
             </div>
           )}
         </div>
       </div>
+
       <ChatStatsBar
         messages={allMessages}
         streamStats={streamStats}
         isStreaming={isStreaming.current}
         onClear={handleClear}
       />
+
       <UserInput
         formRef={formRef}
         onSubmit={handleSubmit}

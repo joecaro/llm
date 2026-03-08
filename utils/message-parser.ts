@@ -1,7 +1,12 @@
+import type { ArtifactRenderRef } from "@/utils/artifact-parser";
+import { normalizeArtifactPath } from "@/utils/artifact-apply";
+import { parseArtifactResponse } from "@/utils/artifact-parser";
+
 interface ParsedMessage {
   reasoning: string | null;
   message: string;
   components: { code: string }[];
+  artifactRefs: ArtifactRenderRef[];
 }
 
 interface ThinkTagResult {
@@ -10,49 +15,111 @@ interface ThinkTagResult {
 }
 
 function parseThinkTag(content: string): ThinkTagResult {
-  // Handle think tag at start
-  if (content.startsWith('<think>')) {
-    const endThinkIndex = content.indexOf('</think>');
+  if (content.startsWith("<think>")) {
+    const endThinkIndex = content.indexOf("</think>");
     if (endThinkIndex !== -1) {
       return {
         reasoning: content.substring(7, endThinkIndex).trim(),
-        message: content.substring(endThinkIndex + 8)
+        message: content.substring(endThinkIndex + 8),
       };
     }
+
     return {
       reasoning: content.substring(7).trim(),
-      message: ''
+      message: "",
     };
   }
 
-  // Handle think tag in middle
-  const thinkIndex = content.indexOf('<think>');
+  const thinkIndex = content.indexOf("<think>");
   if (thinkIndex !== -1) {
-    const endThinkIndex = content.indexOf('</think>', thinkIndex);
+    const endThinkIndex = content.indexOf("</think>", thinkIndex);
     if (endThinkIndex !== -1) {
       return {
         reasoning: content.substring(thinkIndex + 7, endThinkIndex).trim(),
-        message: content.substring(0, thinkIndex) + content.substring(endThinkIndex + 8)
+        message:
+          content.substring(0, thinkIndex) + content.substring(endThinkIndex + 8),
       };
     }
+
     return {
       reasoning: content.substring(thinkIndex + 7).trim(),
-      message: content.substring(0, thinkIndex)
+      message: content.substring(0, thinkIndex),
     };
   }
 
   return {
     reasoning: null,
-    message: content
+    message: content,
   };
 }
 
-function parseReactComponents(content: string): { message: string; components: { code: string }[] } {
+function parseArtifactBlocks(content: string): {
+  message: string;
+  artifactRefs: ArtifactRenderRef[];
+} {
+  const parsed = parseArtifactResponse(content);
+
+  if (parsed.blocks.length === 0) {
+    return {
+      message: content,
+      artifactRefs: [],
+    };
+  }
+
+  let cursor = 0;
+  let refIndex = 0;
+  let message = "";
+  const artifactRefs = parsed.blocks
+    .filter((block) => block.kind !== "request")
+    .map<ArtifactRenderRef>((block) => {
+      const kind: ArtifactRenderRef["kind"] =
+        block.kind === "ref"
+          ? "ref"
+          : block.kind === "create"
+            ? "create"
+            : "replace";
+
+      return {
+        kind,
+        path: (() => {
+          try {
+            return normalizeArtifactPath(block.path);
+          } catch {
+            return block.path;
+          }
+        })(),
+        language: block.language,
+      };
+    });
+
+  for (const block of parsed.blocks) {
+    message += content.slice(cursor, block.start);
+
+    if (block.kind !== "request") {
+      message += `<ArtifactRef index="${refIndex}" />`;
+      refIndex += 1;
+    }
+
+    cursor = block.end;
+  }
+
+  message += content.slice(cursor);
+
+  return {
+    message,
+    artifactRefs,
+  };
+}
+
+function parseReactComponents(content: string): {
+  message: string;
+  components: { code: string }[];
+} {
   const components: { code: string }[] = [];
   const componentRegex = /```tsx\n([\s\S]*?)```/g;
-  let match;
+  let match: RegExpExecArray | null;
   let lastIndex = 0;
-  let messageWithoutComponents = '';
+  let messageWithoutComponents = "";
 
   while ((match = componentRegex.exec(content)) !== null) {
     messageWithoutComponents += content.slice(lastIndex, match.index);
@@ -60,24 +127,26 @@ function parseReactComponents(content: string): { message: string; components: {
     components.push({ code: match[1] });
     lastIndex = match.index + match[0].length;
   }
+
   messageWithoutComponents += content.slice(lastIndex);
 
   return {
     message: messageWithoutComponents,
-    components
+    components,
   };
 }
 
 export function parseMessageContent(content: string): ParsedMessage {
-  // First parse think tags
   const { reasoning, message } = parseThinkTag(content);
-  
-  // Then parse React components from the resulting message
-  const { message: finalMessage, components } = parseReactComponents(message);
+  const { message: messageWithArtifacts, artifactRefs } = parseArtifactBlocks(message);
+  const { message: finalMessage, components } = parseReactComponents(
+    messageWithArtifacts
+  );
 
   return {
     reasoning,
     message: finalMessage,
-    components
+    components,
+    artifactRefs,
   };
-} 
+}

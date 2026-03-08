@@ -1,19 +1,21 @@
 import { Message } from "@/types/chat";
 import { getLlmUrl } from "@/lib/llm-config";
 
-let PROMPT: string | null = null;
-
 async function getPrompt() {
-  if (PROMPT) return PROMPT;
-  
   try {
-    const response = await fetch('/api/prompt');
+    const response = await fetch("/api/prompt", {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to load prompt");
+    }
+
     const data = await response.json();
-    PROMPT = data.prompt;
-    return PROMPT;
+    return typeof data.prompt === "string" ? data.prompt : "";
   } catch (error) {
-    console.error('Failed to load prompt:', error);
-    return '';
+    console.error("Failed to load prompt:", error);
+    return "";
   }
 }
 
@@ -82,41 +84,54 @@ export const streamCompletion = async (params: {
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
     let streamedContent = "";
+    let buffer = "";
     let tokenCount = 0;
     const startTime = performance.now();
+
+    const handleLine = (rawLine: string) => {
+      const line = rawLine.trim();
+      if (!line || line === "data: [DONE]") return;
+
+      try {
+        const jsonString = line.replace(/^data:\s*/, "");
+        const json = JSON.parse(jsonString);
+
+        if (json.choices?.[0]?.delta?.content) {
+          tokenCount++;
+          streamedContent += json.choices[0].delta.content;
+          params.update(streamedContent);
+
+          const elapsed = (performance.now() - startTime) / 1000;
+          params.onStats?.({
+            tokensPerSecond: elapsed > 0 ? tokenCount / elapsed : 0,
+            totalTokens: tokenCount,
+            elapsed,
+            done: false,
+          });
+        }
+      } catch (error) {
+        console.error("Error parsing JSON:", error);
+      }
+    };
 
     if (reader) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n").filter((line) => line.trim());
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
 
         for (const line of lines) {
-          try {
-            if (line === "data: [DONE]") continue;
-
-            const jsonString = line.replace(/^data: /, "");
-            const json = JSON.parse(jsonString);
-
-            if (json.choices?.[0]?.delta?.content) {
-              tokenCount++;
-              streamedContent += json.choices[0].delta.content;
-              params.update(streamedContent);
-
-              const elapsed = (performance.now() - startTime) / 1000;
-              params.onStats?.({
-                tokensPerSecond: elapsed > 0 ? tokenCount / elapsed : 0,
-                totalTokens: tokenCount,
-                elapsed,
-                done: false,
-              });
-            }
-          } catch (e) {
-            console.error("Error parsing JSON:", e);
-          }
+          handleLine(line);
         }
+      }
+
+      buffer += decoder.decode();
+
+      if (buffer.trim()) {
+        handleLine(buffer);
       }
 
       const elapsed = (performance.now() - startTime) / 1000;
