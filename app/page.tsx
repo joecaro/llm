@@ -4,9 +4,10 @@ import { MessagesSection } from "@/components/messages-section";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { ArtifactPanel } from "@/components/artifact-panel";
 import { useChatStore } from "@/store/chat-store";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { Chat } from "@/types/chat";
 
 const DEFAULT_PANEL_WIDTH = 700;
 const MIN_PANEL_WIDTH = 400;
@@ -15,9 +16,20 @@ const MAX_PANEL_WIDTH = 1200;
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+  const [diskSyncEnabled, setDiskSyncEnabled] = useState(false);
   const isResizing = useRef(false);
+  const chats = useChatStore.use.chats();
+  const currentChatId = useChatStore.use.currentChatId();
   const artifactPanelOpen = useChatStore.use.artifactPanelOpen();
   const setArtifactPanelOpen = useChatStore.use.setArtifactPanelOpen();
+  const storageHydrated = useChatStore.use.storageHydrated();
+  const hydrateFromDisk = useChatStore.use.hydrateFromDisk();
+  const markStorageHydrated = useChatStore.use.markStorageHydrated();
+
+  const syncPayload = JSON.stringify({
+    chats,
+    currentChatId,
+  });
 
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -45,6 +57,79 @@ export default function Home() {
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
   }, [panelWidth]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadConversations() {
+      try {
+        const response = await fetch("/api/conversations", {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to load conversations from disk.");
+        }
+
+        const data = (await response.json()) as {
+          chats?: unknown;
+          currentChatId?: unknown;
+        };
+
+        if (cancelled) {
+          return;
+        }
+
+        hydrateFromDisk({
+          chats: Array.isArray(data.chats) ? (data.chats as Chat[]) : [],
+          currentChatId:
+            typeof data.currentChatId === "string" ? data.currentChatId : null,
+        });
+        setDiskSyncEnabled(true);
+      } catch (error) {
+        console.error("Failed to hydrate conversations from disk:", error);
+
+        if (!cancelled) {
+          markStorageHydrated();
+        }
+      }
+    }
+
+    void loadConversations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateFromDisk, markStorageHydrated]);
+
+  useEffect(() => {
+    if (!storageHydrated || !diskSyncEnabled) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      void fetch("/api/conversations", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: syncPayload,
+        signal: controller.signal,
+      }).catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        console.error("Failed to persist conversations to disk:", error);
+      });
+    }, 800);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [diskSyncEnabled, storageHydrated, syncPayload]);
 
   return (
     <main className="h-screen w-screen bg-background flex relative overflow-hidden">

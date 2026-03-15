@@ -1,6 +1,6 @@
 import { MDXRemote } from "next-mdx-remote";
 import { serialize } from "next-mdx-remote/serialize";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import Prism from "prismjs";
 import "prismjs/themes/prism-tomorrow.css";
 import "prismjs/components/prism-typescript";
@@ -15,6 +15,72 @@ import { ReactComponentPreview } from "./react-component-preview";
 import { ArtifactRef as ArtifactRefComponent } from "./artifact-ref";
 import { parseMessageContent } from "@/utils/message-parser";
 import { cn } from "@/lib/utils";
+
+const FALLBACK_PLACEHOLDER_RE =
+  /<(ArtifactRef|ReactComponent)\s+index="(\d+)"\s*\/>/g;
+
+function renderFallbackRichContent(params: {
+  message: string;
+  components: { code: string }[];
+  artifactRefs: { path: string }[];
+}) {
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = FALLBACK_PLACEHOLDER_RE.exec(params.message)) !== null) {
+    const [placeholder, kind, rawIndex] = match;
+    const index = Number.parseInt(rawIndex, 10);
+    const before = params.message.slice(cursor, match.index);
+
+    if (before.trim()) {
+      nodes.push(
+        <div key={`text-${key}`} className="whitespace-pre-wrap break-words">
+          {before}
+        </div>
+      );
+      key += 1;
+    }
+
+    if (kind === "ArtifactRef") {
+      const artifactRef = params.artifactRefs[index];
+      if (artifactRef) {
+        nodes.push(
+          <ArtifactRefComponent
+            key={`artifact-${key}`}
+            path={artifactRef.path}
+          />
+        );
+        key += 1;
+      }
+    } else {
+      const component = params.components[index];
+      if (component) {
+        nodes.push(
+          <ReactComponentPreview
+            key={`component-${key}`}
+            code={component.code}
+          />
+        );
+        key += 1;
+      }
+    }
+
+    cursor = match.index + placeholder.length;
+  }
+
+  const after = params.message.slice(cursor);
+  if (after.trim()) {
+    nodes.push(
+      <div key={`text-${key}`} className="whitespace-pre-wrap break-words">
+        {after}
+      </div>
+    );
+  }
+
+  return nodes;
+}
 
 export function MessageContent({
   content,
@@ -32,8 +98,13 @@ export function MessageContent({
   const serializingRef = useRef(false);
   const latestContentRef = useRef(content);
   latestContentRef.current = content;
-  const safeFallbackContent = parseMessageContent(content).message.trim();
+  const parsedContent = parseMessageContent(content);
+  const safeFallbackContent = parsedContent.message.trim();
   const containsArtifactProtocol = /<artifact(?:-request|-replace|-ref)?\b/.test(content);
+  const fallbackHasRichPlaceholders = FALLBACK_PLACEHOLDER_RE.test(
+    safeFallbackContent
+  );
+  FALLBACK_PLACEHOLDER_RE.lastIndex = 0;
 
   const runSerializeRef = useRef(async function runSerialize(text: string) {
     if (typeof text !== "string" || !text.trim()) {
@@ -137,6 +208,18 @@ export function MessageContent({
       return (
         <div className="border p-2 text-primary border-border bg-muted/50 rounded-lg shadow overflow-hidden">
           <div className="text-sm text-muted-foreground">Preparing artifacts...</div>
+        </div>
+      );
+    }
+
+    if (fallbackHasRichPlaceholders) {
+      return (
+        <div className="w-full border p-2 text-primary border-border bg-muted/50 rounded-lg shadow overflow-hidden max-w-full space-y-3">
+          {renderFallbackRichContent({
+            message: parsedContent.message,
+            components: parsedContent.components,
+            artifactRefs: parsedContent.artifactRefs,
+          })}
         </div>
       );
     }

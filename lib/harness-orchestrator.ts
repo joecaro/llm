@@ -1,33 +1,55 @@
 import type { ArtifactLanguage, Message } from "@/types/chat";
 import type { ChatArtifacts } from "@/types/chat";
 import { streamCompletion, type StreamStats } from "@/fetches/completion";
+import {
+  buildHarnessProtocolError,
+  buildHarnessToolManifest,
+  buildHarnessToolResultsContext,
+  type HarnessToolCall,
+  type HarnessToolResult,
+} from "@/lib/harness-protocol";
 import { applyArtifactOperations } from "@/utils/artifact-apply";
-import { buildArtifactManifest, buildArtifactProtocolError, buildArtifactSourceContext } from "@/utils/artifact-context";
+import {
+  buildArtifactManifest,
+  buildArtifactSourceContext,
+} from "@/utils/artifact-context";
 import type { ParsedArtifactResponse } from "@/utils/artifact-parser";
 import { parseArtifactResponse } from "@/utils/artifact-parser";
+import { parseToolCallResponse } from "@/utils/harness-parser";
 
-const MAX_PASSES = 4;
+const MAX_PASSES = 6;
 
-export interface ArtifactLoopStatus {
+interface MachineBlock {
+  start: number;
+  end: number;
+}
+
+export interface HarnessLoopStatus {
   pass: number;
-  phase: "thinking" | "reading" | "retrying" | "applying" | "finalizing";
+  phase:
+    | "thinking"
+    | "reading"
+    | "calling-tools"
+    | "retrying"
+    | "applying"
+    | "finalizing";
   message: string;
 }
 
-export interface ArtifactTurnResult {
+export interface HarnessTurnResult {
   content: string;
   artifacts: ChatArtifacts;
   changedPaths: string[];
 }
 
-interface RunArtifactTurnParams {
+interface RunHarnessTurnParams {
   model: string;
   systemContent: string;
   sessionMessages: Message[];
   userMessage: string;
   artifacts: ChatArtifacts;
   assistantMessageId: string;
-  onStatus?: (status: ArtifactLoopStatus | null) => void;
+  onStatus?: (status: HarnessLoopStatus | null) => void;
   onStats?: (stats: StreamStats) => void;
   onVisibleContent?: (content: string, pass: number) => void;
   isCancelled?: () => boolean;
@@ -48,15 +70,16 @@ function aggregateStats(
   };
 }
 
-function stripMachineBlocks(content: string, parsed: ReturnType<typeof parseArtifactResponse>): string {
-  if (parsed.blocks.length === 0) {
+function stripMachineBlocks(content: string, blocks: MachineBlock[]): string {
+  if (blocks.length === 0) {
     return content.trim();
   }
 
+  const sortedBlocks = [...blocks].sort((left, right) => left.start - right.start);
   let cursor = 0;
   let stripped = "";
 
-  for (const block of parsed.blocks) {
+  for (const block of sortedBlocks) {
     stripped += content.slice(cursor, block.start);
     cursor = block.end;
   }
@@ -69,16 +92,6 @@ function assertNotCancelled(isCancelled?: () => boolean) {
   if (isCancelled?.()) {
     throw new Error("cancelled");
   }
-}
-
-function slugifyFileStem(input: string): string {
-  const slug = input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-
-  return slug || "artifact";
 }
 
 function pickUniqueArtifactPath(
@@ -101,34 +114,83 @@ function pickUniqueArtifactPath(
   return `${stem}-${counter}${extension}`;
 }
 
+function looksLikeCsv(content: string): boolean {
+  const lines = content
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 5);
+
+  if (lines.length < 2) {
+    return false;
+  }
+
+  const columnCounts = lines.map((line) => line.split(",").length);
+  return columnCounts.every((count) => count > 1 && count === columnCounts[0]);
+}
+
 function inferFallbackDocumentPath(
   content: string,
   userMessage: string
-): string {
+): { path: string; language: string } {
   const lowerContent = content.toLowerCase();
   const lowerUserMessage = userMessage.toLowerCase();
+
+  if (lowerUserMessage.includes("csv") || looksLikeCsv(content)) {
+    return {
+      path: "data/export.csv",
+      language: "csv",
+    };
+  }
+
+  if (lowerContent.includes("```mermaid") || /\b(mermaid|diagram)\b/.test(lowerUserMessage)) {
+    return {
+      path: "docs/diagram.md",
+      language: "md",
+    };
+  }
 
   if (
     /\bsubject:\s*/i.test(content) ||
     /\bdear\s+\[?.+?\]?,/i.test(content) ||
     lowerUserMessage.includes("email")
   ) {
-    return "drafts/email.md";
+    return {
+      path: "drafts/email.md",
+      language: "md",
+    };
   }
 
   if (/\b(plan|brief|roadmap)\b/.test(lowerUserMessage)) {
-    return "docs/plan.md";
+    return {
+      path: "docs/plan.md",
+      language: "md",
+    };
   }
 
   if (/\b(report|summary|analysis)\b/.test(lowerUserMessage)) {
-    return "reports/summary.md";
+    return {
+      path: "reports/summary.md",
+      language: "md",
+    };
   }
 
-  if (lowerContent.includes("# ") || lowerContent.includes("## ")) {
-    return "docs/document.md";
+  if (
+    lowerContent.includes("# ") ||
+    lowerContent.includes("## ") ||
+    lowerUserMessage.includes("markdown")
+  ) {
+    return {
+      path: "docs/document.md",
+      language: "md",
+    };
   }
 
-  return "docs/draft.md";
+  return {
+    path: "docs/draft.md",
+    language: "md",
+  };
 }
 
 function inferFallbackCodePath(
@@ -214,7 +276,9 @@ function synthesizeArtifactFallback(params: {
     /\b(component|widget|ui|page|app|react|tsx|jsx)\b/i.test(
       params.userMessage
     );
-  const fencedMatch = trimmedContent.match(/^```([a-zA-Z0-9_-]+)?\n([\s\S]*?)```(?:\s*[\r\n]+([\s\S]*))?$/);
+  const fencedMatch = trimmedContent.match(
+    /^```([a-zA-Z0-9_-]+)?\n([\s\S]*?)```(?:\s*[\r\n]+([\s\S]*))?$/
+  );
 
   if (fencedMatch) {
     const language = (fencedMatch[1] ?? "text").toLowerCase();
@@ -229,15 +293,23 @@ function synthesizeArtifactFallback(params: {
       explicitArtifactRequest ||
       (params.artifacts.order.length === 0 && componentIntent)
     ) {
-      const basePath =
-        language === "markdown" || language === "md"
-          ? inferFallbackDocumentPath(fileContent, params.userMessage)
-          : inferFallbackCodePath(language, params.userMessage);
+      if (language === "markdown" || language === "md" || language === "csv") {
+        const fallback = inferFallbackDocumentPath(fileContent, params.userMessage);
+
+        return buildSyntheticCreateResponse({
+          path: pickUniqueArtifactPath(params.artifacts, fallback.path),
+          language: fallback.language,
+          fileContent,
+          intro,
+        });
+      }
 
       return buildSyntheticCreateResponse({
-        path: pickUniqueArtifactPath(params.artifacts, basePath),
-        language:
-          language === "markdown" || language === "md" ? "text" : language,
+        path: pickUniqueArtifactPath(
+          params.artifacts,
+          inferFallbackCodePath(language, params.userMessage)
+        ),
+        language,
         fileContent,
         intro,
       });
@@ -248,13 +320,20 @@ function synthesizeArtifactFallback(params: {
     .reverse()
     .find((message) => message.role === "user")?.content;
 
-  if (explicitArtifactRequest || /\bemail|document|plan|report|brief\b/i.test(previousUserMessage ?? "")) {
+  if (
+    explicitArtifactRequest ||
+    /\b(email|document|plan|report|brief|csv|markdown|diagram)\b/i.test(
+      previousUserMessage ?? ""
+    )
+  ) {
+    const fallback = inferFallbackDocumentPath(
+      trimmedContent,
+      previousUserMessage ?? params.userMessage
+    );
+
     return buildSyntheticCreateResponse({
-      path: pickUniqueArtifactPath(
-        params.artifacts,
-        inferFallbackDocumentPath(trimmedContent, previousUserMessage ?? params.userMessage)
-      ),
-      language: "text",
+      path: pickUniqueArtifactPath(params.artifacts, fallback.path),
+      language: fallback.language,
       fileContent: trimmedContent,
       intro: "Created artifact:",
     });
@@ -273,13 +352,52 @@ function buildMessages(
   return [
     { role: "system", content: systemContent },
     { role: "system", content: buildArtifactManifest(artifacts) },
+    { role: "system", content: buildHarnessToolManifest() },
     ...sessionMessages,
     { role: "user", content: userMessage },
     ...loopMessages,
   ];
 }
 
-export async function runArtifactAwareTurn({
+async function executeToolCalls(
+  calls: HarnessToolCall[]
+): Promise<HarnessToolResult[]> {
+  const response = await fetch("/api/harness", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ calls }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to execute harness tools.");
+  }
+
+  const data = (await response.json()) as { results?: HarnessToolResult[] };
+  return Array.isArray(data.results) ? data.results : [];
+}
+
+function buildContextResultMessage(params: {
+  toolResults: HarnessToolResult[];
+  artifactSourceContent?: string;
+}): string {
+  const sections = [
+    "Here is the requested context. You may request more context, or continue to a final response with any artifact edits.",
+  ];
+
+  if (params.toolResults.length > 0) {
+    sections.push(buildHarnessToolResultsContext(params.toolResults));
+  }
+
+  if (params.artifactSourceContent) {
+    sections.push(params.artifactSourceContent);
+  }
+
+  return sections.join("\n\n");
+}
+
+export async function runHarnessAwareTurn({
   model,
   systemContent,
   sessionMessages,
@@ -290,12 +408,12 @@ export async function runArtifactAwareTurn({
   onStats,
   onVisibleContent,
   isCancelled,
-}: RunArtifactTurnParams): Promise<ArtifactTurnResult> {
+}: RunHarnessTurnParams): Promise<HarnessTurnResult> {
   let workingArtifacts = artifacts;
   const loopMessages: Message[] = [];
   const statsTotals = { tokens: 0, elapsed: 0 };
   let lastProtocolError =
-    "The assistant did not produce a valid artifact response before the loop limit was reached.";
+    "The assistant did not produce a valid harness response before the loop limit was reached.";
 
   for (let pass = 1; pass <= MAX_PASSES; pass += 1) {
     assertNotCancelled(isCancelled);
@@ -335,16 +453,23 @@ export async function runArtifactAwareTurn({
       statsTotals.elapsed += passFinalStats.elapsed;
     }
 
-    const parsed = parseArtifactResponse(passContent);
-    const requestDirectives = parsed.directives.filter(
+    const parsedArtifacts = parseArtifactResponse(passContent);
+    const parsedTools = parseToolCallResponse(passContent);
+    const requestDirectives = parsedArtifacts.directives.filter(
       (directive) => directive.kind === "request"
     );
-    const editDirectives = parsed.directives.filter(
+    const editDirectives = parsedArtifacts.directives.filter(
       (directive) => directive.kind === "create" || directive.kind === "replace"
     );
-    const strippedContent = stripMachineBlocks(passContent, parsed);
+    const toolCalls = parsedTools.directives;
+    const strippedContent = stripMachineBlocks(passContent, [
+      ...parsedArtifacts.blocks,
+      ...parsedTools.blocks,
+    ]);
     const fallbackParsed =
-      requestDirectives.length === 0 && editDirectives.length === 0
+      requestDirectives.length === 0 &&
+      editDirectives.length === 0 &&
+      toolCalls.length === 0
         ? synthesizeArtifactFallback({
             content: passContent,
             userMessage,
@@ -355,43 +480,82 @@ export async function runArtifactAwareTurn({
 
     assertNotCancelled(isCancelled);
 
-    if (requestDirectives.length > 0) {
-      if (editDirectives.length > 0 || strippedContent) {
+    if (parsedTools.errors.length > 0) {
+      lastProtocolError = parsedTools.errors.join(" ");
+      onVisibleContent?.("", pass);
+      loopMessages.push({ role: "assistant", content: passContent });
+      loopMessages.push({
+        role: "system",
+        content: buildHarnessProtocolError(lastProtocolError),
+      });
+      continue;
+    }
+
+    if (requestDirectives.length > 0 || toolCalls.length > 0) {
+      if (editDirectives.length > 0 || fallbackParsed || strippedContent) {
         lastProtocolError =
-          "Artifact responses must choose one mode: request files only, or send final edits/prose.";
+          "Request-only responses may contain only artifact requests and tool calls.";
 
         onVisibleContent?.("", pass);
         loopMessages.push({ role: "assistant", content: passContent });
         loopMessages.push({
           role: "system",
-          content: buildArtifactProtocolError(lastProtocolError),
+          content: buildHarnessProtocolError(lastProtocolError),
         });
         continue;
       }
 
       const requestedPaths = requestDirectives.map((directive) => directive.path);
-      const sourceContext = buildArtifactSourceContext(workingArtifacts, requestedPaths);
+      let artifactSourceContent: string | undefined;
 
-      if (!sourceContext.ok) {
-        lastProtocolError = sourceContext.error;
-        onVisibleContent?.("", pass);
-        loopMessages.push({ role: "assistant", content: passContent });
-        loopMessages.push({
-          role: "system",
-          content: buildArtifactProtocolError(sourceContext.error),
+      if (requestedPaths.length > 0) {
+        const sourceContext = buildArtifactSourceContext(
+          workingArtifacts,
+          requestedPaths
+        );
+
+        if (!sourceContext.ok) {
+          lastProtocolError = sourceContext.error;
+          onVisibleContent?.("", pass);
+          loopMessages.push({ role: "assistant", content: passContent });
+          loopMessages.push({
+            role: "system",
+            content: buildHarnessProtocolError(sourceContext.error),
+          });
+          continue;
+        }
+
+        onStatus?.({
+          pass,
+          phase: "reading",
+          message: `Reading ${requestedPaths.join(", ")}`,
         });
-        continue;
+
+        artifactSourceContent = sourceContext.content;
       }
 
-      onStatus?.({
-        pass,
-        phase: "reading",
-        message: `Reading ${requestedPaths.join(", ")}`,
-      });
+      let toolResults: HarnessToolResult[] = [];
+
+      if (toolCalls.length > 0) {
+        onStatus?.({
+          pass,
+          phase: "calling-tools",
+          message: `Running ${toolCalls
+            .map((call) => call.name)
+            .join(", ")}`,
+        });
+        toolResults = await executeToolCalls(toolCalls);
+      }
 
       onVisibleContent?.("", pass);
       loopMessages.push({ role: "assistant", content: passContent });
-      loopMessages.push({ role: "system", content: sourceContext.content });
+      loopMessages.push({
+        role: "system",
+        content: buildContextResultMessage({
+          toolResults,
+          artifactSourceContent,
+        }),
+      });
       continue;
     }
 
@@ -404,7 +568,7 @@ export async function runArtifactAwareTurn({
 
       const applied = applyArtifactOperations({
         artifacts: workingArtifacts,
-        parsed: fallbackParsed ?? parsed,
+        parsed: fallbackParsed ?? parsedArtifacts,
         messageId: assistantMessageId,
       });
 
@@ -414,7 +578,7 @@ export async function runArtifactAwareTurn({
         loopMessages.push({ role: "assistant", content: passContent });
         loopMessages.push({
           role: "system",
-          content: buildArtifactProtocolError(applied.error),
+          content: buildHarnessProtocolError(applied.error),
         });
         continue;
       }
@@ -450,7 +614,7 @@ export async function runArtifactAwareTurn({
   onStatus?.(null);
 
   return {
-    content: `Sorry, I couldn't complete the artifact update.\n\n${lastProtocolError}`,
+    content: `Sorry, I couldn't complete the request.\n\n${lastProtocolError}`,
     artifacts,
     changedPaths: [],
   };

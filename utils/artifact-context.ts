@@ -1,15 +1,25 @@
 import type { ChatArtifacts } from "@/types/chat";
 import { normalizeArtifactPath } from "@/utils/artifact-apply";
 
+function escapeAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 export function buildArtifactManifest(artifacts: ChatArtifacts): string {
   const lines = artifacts.order
     .map((path) => artifacts.files[path])
     .filter(Boolean)
     .map(
       (file) =>
-        `<file path="${file.path}" language="${file.language}" chars="${file.content.length}" updatedAt="${new Date(
-          file.updatedAt
-        ).toISOString()}" />`
+        `<file path="${escapeAttribute(file.path)}" language="${escapeAttribute(
+          file.language
+        )}" kind="${escapeAttribute(file.kind ?? file.language)}" description="${escapeAttribute(
+          file.description ?? file.path
+        )}" chars="${file.content.length}" updatedAt="${new Date(file.updatedAt).toISOString()}" />`
     );
 
   return [

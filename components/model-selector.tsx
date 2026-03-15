@@ -17,7 +17,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useState } from "react";
-export type ModelId = "llama3.2" | "codellama:latest" | "deepseek-r1:7b" | "qwen2.5" | "qwen2.5:7b";
+export type ModelId =
+  | "llama3.2"
+  | "codellama:latest"
+  | "deepseek-r1:7b"
+  | "qwen2.5"
+  | "qwen2.5:7b"
+  | "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q5_K_M";
 
 interface ModelSelectorProps {
   value: ModelId;
@@ -45,6 +51,10 @@ const models: { value: ModelId; label: string }[] = [
     value: "qwen2.5:7b",
     label: "Qwen2.5:7B",
   },
+  {
+    value: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q5_K_M",
+    label: "Meta Llama 3.1 8B (Q5_K_M)",
+  },
 ];
 export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
@@ -52,7 +62,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
+        <Button 
           variant="default"
           role="combobox"
           aria-expanded={open}

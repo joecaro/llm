@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Pencil, RotateCcw, X } from "lucide-react";
 import { MessageContent } from "./message-content";
 import { MessageReasoning } from "./message-reasoning";
 import { ArtifactStatusRow } from "./artifact-status-row";
@@ -12,9 +13,48 @@ import { getAllMessages, getCurrentSession, useChatStore } from "@/store/chat-st
 import useScrollToBottom from "@/lib/use-scroll-to-bottom";
 import { fetchCompletion, streamCompletion, type StreamStats } from "@/fetches/completion";
 import { ChatStatsBar } from "./chat-stats-bar";
-import { runArtifactAwareTurn, type ArtifactLoopStatus } from "@/lib/artifact-orchestrator";
+import { runHarnessAwareTurn, type HarnessLoopStatus } from "@/lib/harness-orchestrator";
 import { isArtifactPreviewable } from "@/utils/artifact-apply";
 import type { ChatMessage, ChatSession } from "@/types/chat";
+import { Button } from "./ui/button";
+import { Textarea } from "./ui/textarea";
+
+const ARTIFACT_PREFERRED_INTENT_RE =
+  /\b(components?|widgets?|ui|page|pages|app|apps|screen|screens|layout|layouts|card|cards|form|forms|table|tables|modal|modals|dialog|dialogs|button|buttons|navbar|navbars|todo|dashboard|dashboards|react|tsx|jsx|css)\b/i;
+const SMALL_SNIPPET_RE =
+  /\b(snippet|small snippet|tiny snippet|quick snippet|one-liner|one liner|short example)\b/i;
+
+function buildArtifactPreferenceHint(userMessage: string, hasArtifacts: boolean) {
+  if (SMALL_SNIPPET_RE.test(userMessage)) {
+    return "";
+  }
+
+  if (hasArtifacts || ARTIFACT_PREFERRED_INTENT_RE.test(userMessage)) {
+    return [
+      "For this request, prefer the artifact filesystem for any non-trivial component or reusable UI output.",
+      "Use bare code fences only for very small snippets or quick examples.",
+    ].join("\n");
+  }
+
+  return "";
+}
+
+function findMessageLocation(
+  sessions: ChatSession[],
+  messageId: string
+): { sessionIndex: number; messageIndex: number } | null {
+  for (const [sessionIndex, session] of sessions.entries()) {
+    const messageIndex = session.messages.findIndex(
+      (message) => message.id === messageId
+    );
+
+    if (messageIndex !== -1) {
+      return { sessionIndex, messageIndex };
+    }
+  }
+
+  return null;
+}
 
 export function MessagesSection({
   hideSelector = false,
@@ -29,14 +69,18 @@ export function MessagesSection({
   const isStreaming = useRef(false);
 
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<ModelId>("qwen2.5:7b");
+  const [selectedModel, setSelectedModel] = useState<ModelId>("bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q5_K_M");
   const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
-  const [artifactStatus, setArtifactStatus] = useState<ArtifactLoopStatus | null>(null);
+  const [artifactStatus, setArtifactStatus] = useState<HarnessLoopStatus | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState("");
 
   const chats = useChatStore.use.chats();
   const currentChatId = useChatStore.use.currentChatId();
   const addMessageToChat = useChatStore.use.addMessageToChat();
   const updateMessageInChat = useChatStore.use.updateMessageInChat();
+  const replaceMessageAndTruncateChat =
+    useChatStore.use.replaceMessageAndTruncateChat();
   const updateChatTitle = useChatStore.use.updateChatTitle();
   const compactChat = useChatStore.use.compactChat();
   const clearMessagesInChat = useChatStore.use.clearMessagesInChat();
@@ -50,6 +94,11 @@ export function MessagesSection({
 
   useEffect(() => {
     currentChatIdRef.current = currentChatId;
+  }, [currentChatId]);
+
+  useEffect(() => {
+    setEditingMessageId(null);
+    setEditingContent("");
   }, [currentChatId]);
 
   useScrollToBottom({
@@ -99,9 +148,14 @@ export function MessagesSection({
       ?.filter((session) => session.summary)
       .map((session) => session.summary)
       .join("\n\n");
+    const artifactPreferenceHint = buildArtifactPreferenceHint(
+      userMessage,
+      currentChat.artifacts.order.length > 0
+    );
     const systemContent = [
       "You are a helpful ai assistant." + context,
       previousSummary ? `\n\nPrevious conversation summary:\n${previousSummary}` : "",
+      artifactPreferenceHint ? `\n\n${artifactPreferenceHint}` : "",
     ].join("");
 
     setIsLoading(true);
@@ -110,7 +164,7 @@ export function MessagesSection({
     setArtifactStatus({
       pass: 1,
       phase: "thinking",
-      message: "Thinking (1/4)",
+      message: "Thinking (1/6)",
     });
 
     addMessageToChat(currentChat.id, {
@@ -121,7 +175,7 @@ export function MessagesSection({
     });
 
     try {
-      const result = await runArtifactAwareTurn({
+      const result = await runHarnessAwareTurn({
         model: selectedModel,
         systemContent,
         sessionMessages: currentMessages.map((message) => ({
@@ -169,11 +223,143 @@ export function MessagesSection({
         return;
       }
 
-      console.error("Error running artifact-aware turn:", error);
+      console.error("Error running harness-aware turn:", error);
 
       if (currentChatIdRef.current === currentChat.id) {
         updateMessageInChat(
           currentChat.id,
+          assistantMessageId,
+          "Sorry, I encountered an error while generating the response."
+        );
+      }
+    } finally {
+      isStreaming.current = false;
+      setArtifactStatus(null);
+      setIsLoading(false);
+    }
+  }
+
+  function handleEditStart(message: ChatMessage) {
+    setEditingMessageId(message.id);
+    setEditingContent(message.content);
+  }
+
+  function handleEditCancel() {
+    setEditingMessageId(null);
+    setEditingContent("");
+  }
+
+  async function handleEditRestart(messageId: string) {
+    if (!chat) return;
+
+    const nextContent = editingContent.trim();
+    if (!nextContent) return;
+
+    const location = findMessageLocation(sessions, messageId);
+    if (!location) return;
+
+    const targetSession = sessions[location.sessionIndex];
+    const priorSessionMessages = targetSession.messages.slice(0, location.messageIndex);
+    const previousSummary = sessions
+      .slice(0, location.sessionIndex)
+      .map((session) => session.summary)
+      .filter((summary): summary is string => Boolean(summary))
+      .join("\n\n");
+    const shouldRefreshTitle =
+      location.sessionIndex === 0 && location.messageIndex === 0;
+
+    currentChatIdRef.current = chat.id;
+    replaceMessageAndTruncateChat(chat.id, messageId, nextContent);
+    handleEditCancel();
+
+    if (shouldRefreshTitle) {
+      fetchTitle(chat.id, nextContent);
+    }
+
+    const refreshedChat = useChatStore
+      .getState()
+      .chats.find((candidate) => candidate.id === chat.id);
+
+    if (!refreshedChat) return;
+
+    const assistantMessageId = crypto.randomUUID();
+    const artifactPreferenceHint = buildArtifactPreferenceHint(
+      nextContent,
+      refreshedChat.artifacts.order.length > 0
+    );
+    const systemContent = [
+      "You are a helpful ai assistant." + context,
+      previousSummary ? `\n\nPrevious conversation summary:\n${previousSummary}` : "",
+      artifactPreferenceHint ? `\n\n${artifactPreferenceHint}` : "",
+    ].join("");
+
+    setIsLoading(true);
+    isStreaming.current = true;
+    setStreamStats(null);
+    setArtifactStatus({
+      pass: 1,
+      phase: "thinking",
+      message: "Thinking (1/6)",
+    });
+
+    addMessageToChat(chat.id, {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      createdAt: Date.now(),
+    });
+
+    try {
+      const result = await runHarnessAwareTurn({
+        model: selectedModel,
+        systemContent,
+        sessionMessages: priorSessionMessages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+        userMessage: nextContent,
+        artifacts: refreshedChat.artifacts,
+        assistantMessageId,
+        onStatus: setArtifactStatus,
+        onStats: setStreamStats,
+        onVisibleContent: (content) => {
+          if (currentChatIdRef.current !== chat.id) return;
+          updateMessageInChat(chat.id, assistantMessageId, content);
+        },
+        isCancelled: () => currentChatIdRef.current !== chat.id,
+      });
+
+      if (currentChatIdRef.current !== chat.id) {
+        return;
+      }
+
+      updateMessageInChat(chat.id, assistantMessageId, result.content);
+
+      if (result.changedPaths.length > 0) {
+        setChatArtifacts(chat.id, result.artifacts);
+
+        const lastChangedPath =
+          result.changedPaths[result.changedPaths.length - 1] ?? null;
+
+        if (lastChangedPath) {
+          const artifact = result.artifacts.files[lastChangedPath];
+          setActiveArtifactPath(lastChangedPath);
+          setArtifactView(
+            artifact && isArtifactPreviewable(artifact.language) ? "preview" : "code"
+          );
+          setArtifactPanelOpen(true);
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === "cancelled") {
+        return;
+      }
+
+      console.error("Error restarting from edited message:", error);
+
+      if (currentChatIdRef.current === chat.id) {
+        updateMessageInChat(
+          chat.id,
           assistantMessageId,
           "Sorry, I encountered an error while generating the response."
         );
@@ -297,28 +483,103 @@ export function MessagesSection({
                       <div className="flex-1 h-px bg-border" />
                     </div>
                   )}
-                  {session.messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className="flex gap-3 md:gap-4 items-start w-full mb-4"
-                    >
+                  {session.messages.map((message) => {
+                    const isAssistant = message.role === "assistant";
+
+                    return (
                       <div
-                        className={`w-8 h-8 rounded-full text-xs font-medium text-primary ${
-                          message.role === "assistant" ? "bg-muted" : "bg-muted/70"
-                        } flex items-center justify-center shrink-0`}
+                        key={message.id}
+                        className={`flex gap-3 md:gap-4 items-start w-full mb-4 ${
+                          isAssistant ? "justify-start" : "justify-end"
+                        }`}
                       >
-                        {message.role === "assistant" ? "AI" : "You"}
+                        {isAssistant && (
+                          <div className="w-8 h-8 rounded-full text-xs font-medium text-primary bg-muted flex items-center justify-center shrink-0">
+                            AI
+                          </div>
+                        )}
+                        <div
+                          className={`min-w-0 space-y-2 ${
+                            isAssistant
+                              ? "flex-1"
+                              : "w-full sm:w-fit sm:min-w-[50%] sm:max-w-[70%]"
+                          }`}
+                        >
+                          {editingMessageId === message.id ? (
+                            <div className="border p-3 text-primary border-border bg-muted/50 rounded-lg shadow overflow-hidden space-y-3">
+                              <Textarea
+                                value={editingContent}
+                                onChange={(event) => setEditingContent(event.target.value)}
+                                disabled={isLoading}
+                                className="min-h-[120px] resize-y bg-background/80"
+                                onKeyDown={(event) => {
+                                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                                    event.preventDefault();
+                                    void handleEditRestart(message.id);
+                                  }
+
+                                  if (event.key === "Escape") {
+                                    event.preventDefault();
+                                    handleEditCancel();
+                                  }
+                                }}
+                              />
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={handleEditCancel}
+                                  disabled={isLoading}
+                                >
+                                  <X className="w-4 h-4" />
+                                  Cancel
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => void handleEditRestart(message.id)}
+                                  disabled={isLoading || !editingContent.trim()}
+                                >
+                                  <RotateCcw className="w-4 h-4" />
+                                  Save and restart
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <MessageReasoning content={message.content} />
+                              <MessageContent
+                                content={message.content}
+                                chatId={chat?.id}
+                                messageId={message.id}
+                              />
+                            </>
+                          )}
+                          {!isAssistant && editingMessageId !== message.id && (
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-2 text-xs"
+                                onClick={() => handleEditStart(message)}
+                                disabled={isLoading}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                                Edit
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                        {!isAssistant && (
+                          <div className="w-8 h-8 rounded-full text-xs font-medium text-primary bg-muted/70 flex items-center justify-center shrink-0">
+                            You
+                          </div>
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0 space-y-2">
-                        <MessageReasoning content={message.content} />
-                        <MessageContent
-                          content={message.content}
-                          chatId={chat?.id}
-                          messageId={message.id}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ))}
             </>

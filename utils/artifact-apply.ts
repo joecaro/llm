@@ -3,6 +3,7 @@ import type {
   ChatArtifactFile,
   ChatArtifacts,
 } from "@/types/chat";
+import { inferArtifactDescription, inferArtifactKind } from "@/utils/artifact-descriptor";
 import { createEmptyArtifacts } from "@/utils/create-empty-chat";
 import type {
   ArtifactCreateDirective,
@@ -14,10 +15,12 @@ import type {
 
 const EXTENSION_TO_LANGUAGE: Record<string, ArtifactLanguage> = {
   css: "css",
+  csv: "csv",
   html: "html",
   js: "js",
   json: "json",
   jsx: "jsx",
+  md: "md",
   ts: "ts",
   tsx: "tsx",
 };
@@ -55,7 +58,7 @@ export function inferArtifactLanguage(
 
   if (
     hintedLanguage &&
-    ["tsx", "jsx", "css", "js", "ts", "html", "json", "text"].includes(
+    ["tsx", "jsx", "css", "js", "ts", "html", "json", "md", "csv", "text"].includes(
       hintedLanguage
     )
   ) {
@@ -156,6 +159,15 @@ function applyCreateDirective(
     path,
     language: inferArtifactLanguage(path, directive.language),
     content: directive.content,
+    description: inferArtifactDescription({
+      path,
+      language: inferArtifactLanguage(path, directive.language),
+      content: directive.content,
+    }),
+    kind: inferArtifactKind({
+      path,
+      language: inferArtifactLanguage(path, directive.language),
+    }),
     createdAt: timestamp,
     updatedAt: timestamp,
     createdByMessageId: messageId,
@@ -203,6 +215,17 @@ function applyReplaceDirective(
   fileMap[path] = {
     ...file,
     content: file.content.replace(directive.search, directive.replace),
+    description: inferArtifactDescription({
+      path,
+      language: file.language,
+      content: file.content.replace(directive.search, directive.replace),
+    }),
+    kind:
+      file.kind ??
+      inferArtifactKind({
+        path,
+        language: file.language,
+      }),
     updatedAt: timestamp,
     updatedByMessageId: messageId,
   };

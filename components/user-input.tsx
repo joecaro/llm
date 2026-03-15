@@ -6,7 +6,6 @@ import { useRef, useEffect, useCallback } from "react";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { useChatStore } from "@/store/chat-store";
-import { createNewChat } from "@/utils/chat-storage";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -44,12 +43,11 @@ export default function UserInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const addChat = useChatStore.use.addChat();
+  const createNewChat = useChatStore.use.createNewChat();
 
   const handleNewChat = useCallback(() => {
-    const newChat = createNewChat();
-    addChat(newChat);
-  }, [addChat]);
+    createNewChat();
+  }, [createNewChat]);
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
     if (textarea) {

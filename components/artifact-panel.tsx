@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Prism from "prismjs";
 import "prismjs/themes/prism-tomorrow.css";
 import "prismjs/components/prism-markup";
+import "prismjs/components/prism-markdown";
 import "prismjs/components/prism-typescript";
 import "prismjs/components/prism-javascript";
 import "prismjs/components/prism-jsx";
@@ -36,6 +37,10 @@ function getPrismLanguage(language: string): string {
   switch (language) {
     case "html":
       return "markup";
+    case "md":
+      return "markdown";
+    case "csv":
+      return "none";
     case "text":
       return "none";
     default:

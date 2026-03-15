@@ -1,10 +1,10 @@
 "use client";
 
 import { LoaderCircle } from "lucide-react";
-import type { ArtifactLoopStatus } from "@/lib/artifact-orchestrator";
+import type { HarnessLoopStatus } from "@/lib/harness-orchestrator";
 
 interface ArtifactStatusRowProps {
-  status: ArtifactLoopStatus | null;
+  status: HarnessLoopStatus | null;
 }
 
 export function ArtifactStatusRow({ status }: ArtifactStatusRowProps) {

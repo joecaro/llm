@@ -1,6 +1,5 @@
 "use client";
 
-import { createNewChat } from "@/utils/chat-storage";
 import { Search, SquarePen, TrashIcon, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
@@ -17,15 +16,14 @@ interface ChatSidebarProps {
 export function ChatSidebar({ onClose }: ChatSidebarProps) {
   const chats = useChatStore.use.chats();
   const currentChatId = useChatStore.use.currentChatId();
-  const addChat = useChatStore.use.addChat();
+  const createNewChat = useChatStore.use.createNewChat();
   const deleteChat = useChatStore.use.deleteChat();
   const setCurrentChatId = useChatStore.use.setCurrentChatId();
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
 
   const handleNewChat = () => {
-    const newChat = createNewChat();
-    addChat(newChat);
+    createNewChat();
   };
 
   const handleDeleteChat = (chatId: string) => {

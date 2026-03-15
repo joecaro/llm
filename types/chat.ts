@@ -15,12 +15,16 @@ export type ArtifactLanguage =
   | 'ts'
   | 'html'
   | 'json'
+  | 'md'
+  | 'csv'
   | 'text';
 
 export interface ChatArtifactFile {
   path: string;
   language: ArtifactLanguage;
   content: string;
+  description?: string;
+  kind?: string;
   createdAt: number;
   updatedAt: number;
   createdByMessageId: string;

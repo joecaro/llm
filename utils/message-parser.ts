@@ -137,16 +137,33 @@ function parseReactComponents(content: string): {
   };
 }
 
+function normalizeRichPlaceholders(content: string): string {
+  return content
+    .replace(
+      /```[a-zA-Z0-9_-]*\n\s*(<(ArtifactRef|ReactComponent)\s+index="\d+"\s*\/>)\s*\n```/g,
+      "$1"
+    )
+    .replace(
+      /(^|\n)[ \t]+(?=<(ArtifactRef|ReactComponent)\s+index="\d+"\s*\/>(?:\n|$))/g,
+      "$1"
+    )
+    .replace(
+      /(^|\n)>[ \t]*(?=<(ArtifactRef|ReactComponent)\s+index="\d+"\s*\/>(?:\n|$))/g,
+      "$1"
+    );
+}
+
 export function parseMessageContent(content: string): ParsedMessage {
   const { reasoning, message } = parseThinkTag(content);
   const { message: messageWithArtifacts, artifactRefs } = parseArtifactBlocks(message);
   const { message: finalMessage, components } = parseReactComponents(
     messageWithArtifacts
   );
+  const normalizedMessage = normalizeRichPlaceholders(finalMessage);
 
   return {
     reasoning,
-    message: finalMessage,
+    message: normalizedMessage,
     components,
     artifactRefs,
   };
