@@ -32,12 +32,18 @@ export function MessageContent({
   const serializingRef = useRef(false);
   const latestContentRef = useRef(content);
   latestContentRef.current = content;
+  const safeFallbackContent = parseMessageContent(content).message.trim();
+  const containsArtifactProtocol = /<artifact(?:-request|-replace|-ref)?\b/.test(content);
 
   const runSerializeRef = useRef(async function runSerialize(text: string) {
     if (typeof text !== "string" || !text.trim()) {
       setMdxSource(null);
       return;
     }
+
+    const isArtifactProtocolText = /<artifact(?:-request|-replace|-ref)?\b/.test(
+      text
+    );
 
     serializingRef.current = true;
     try {
@@ -69,10 +75,16 @@ export function MessageContent({
       });
       setError(null);
     } catch (err) {
-      console.error("Error serializing MDX:", err);
-      setError(
-        err instanceof Error ? err.message : "Error processing content"
-      );
+      setMdxSource(null);
+
+      if (!isArtifactProtocolText) {
+        console.error("Error serializing MDX:", err);
+        setError(
+          err instanceof Error ? err.message : "Error processing content"
+        );
+      } else {
+        setError(null);
+      }
     } finally {
       serializingRef.current = false;
     }
@@ -121,9 +133,19 @@ export function MessageContent({
   }
 
   if (!mdxSource) {
+    if (!safeFallbackContent && containsArtifactProtocol) {
+      return (
+        <div className="border p-2 text-primary border-border bg-muted/50 rounded-lg shadow overflow-hidden">
+          <div className="text-sm text-muted-foreground">Preparing artifacts...</div>
+        </div>
+      );
+    }
+
     return (
       <div className="border p-2 text-primary border-border bg-muted/50 rounded-lg shadow overflow-hidden">
-        <pre className="whitespace-pre-wrap break-words">{content}</pre>
+        <pre className="whitespace-pre-wrap break-words">
+          {safeFallbackContent || content}
+        </pre>
       </div>
     );
   }

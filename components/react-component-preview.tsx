@@ -15,6 +15,19 @@ interface ReactComponentPreviewProps {
   showChrome?: boolean;
 }
 
+function stripImportStatements(code: string): string {
+  return code
+    .replace(
+      /^import\s+type\s[\s\S]*?from\s+['"][^'"]+['"];?[^\n]*$/gm,
+      ""
+    )
+    .replace(
+      /^import\s+[\s\S]*?from\s+['"][^'"]+['"];?[^\n]*$/gm,
+      ""
+    )
+    .replace(/^import\s+['"][^'"]+['"];?[^\n]*$/gm, "");
+}
+
 function extractComponentName(code: string): string | null {
   let match = code.match(/export\s+default\s+function\s+([A-Z]\w*)/);
   if (match) return match[1];
@@ -74,16 +87,7 @@ function processCode(rawCode: string): {
   );
 
   code = code.replace(/^['"]use (client|server)['"];?\s*$/gm, "");
-  code = code.replace(
-    /^import\s+type\s[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm,
-    ""
-  );
-  code = code.replace(
-    /^import\s*\{[\s\S]*?\}\s*from\s+['"][^'"]+['"];?\s*$/gm,
-    ""
-  );
-  code = code.replace(/^import\s+.*?from\s+['"][^'"]+['"];?\s*$/gm, "");
-  code = code.replace(/^import\s+['"][^'"]+['"];?\s*$/gm, "");
+  code = stripImportStatements(code);
   code = code.replace(
     /(?:const|let|var)\s+.*?=\s*require\(['"][^'"]+['"]\);?\s*/g,
     ""

@@ -1,6 +1,6 @@
 import type { ArtifactRenderRef } from "@/utils/artifact-parser";
 import { normalizeArtifactPath } from "@/utils/artifact-apply";
-import { parseArtifactResponse } from "@/utils/artifact-parser";
+import { parseArtifactResponse, truncateIncompleteArtifactMarkup } from "@/utils/artifact-parser";
 
 interface ParsedMessage {
   reasoning: string | null;
@@ -57,11 +57,12 @@ function parseArtifactBlocks(content: string): {
   message: string;
   artifactRefs: ArtifactRenderRef[];
 } {
-  const parsed = parseArtifactResponse(content);
+  const sanitizedContent = truncateIncompleteArtifactMarkup(content);
+  const parsed = parseArtifactResponse(sanitizedContent);
 
   if (parsed.blocks.length === 0) {
     return {
-      message: content,
+      message: sanitizedContent,
       artifactRefs: [],
     };
   }
@@ -93,7 +94,7 @@ function parseArtifactBlocks(content: string): {
     });
 
   for (const block of parsed.blocks) {
-    message += content.slice(cursor, block.start);
+    message += sanitizedContent.slice(cursor, block.start);
 
     if (block.kind !== "request") {
       message += `<ArtifactRef index="${refIndex}" />`;
@@ -103,7 +104,7 @@ function parseArtifactBlocks(content: string): {
     cursor = block.end;
   }
 
-  message += content.slice(cursor);
+  message += sanitizedContent.slice(cursor);
 
   return {
     message,

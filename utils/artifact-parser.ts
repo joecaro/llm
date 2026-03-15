@@ -390,3 +390,26 @@ export function parseArtifactResponse(content: string): ParsedArtifactResponse {
     ),
   };
 }
+
+export function truncateIncompleteArtifactMarkup(content: string): string {
+  const parsed = parseArtifactResponse(content);
+  const sortedBlocks = parsed.blocks;
+  const tagRegex = /<artifact(?:-request|-replace|-ref)?\b/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = tagRegex.exec(content)) !== null) {
+    const tagIndex = match.index;
+    const coveringBlock = sortedBlocks.find(
+      (block) => tagIndex >= block.start && tagIndex < block.end
+    );
+
+    if (coveringBlock) {
+      tagRegex.lastIndex = coveringBlock.end;
+      continue;
+    }
+
+    return content.slice(0, tagIndex).trimEnd();
+  }
+
+  return content;
+}
