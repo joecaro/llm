@@ -3,7 +3,6 @@ export type HarnessToolName =
   | "search_files"
   | "read_file"
   | "run_command"
-  | "web_search"
   | "fetch_url";
 
 export interface HarnessToolCall {
@@ -17,6 +16,7 @@ export interface HarnessToolResult {
   ok: boolean;
   output?: string;
   error?: string;
+  durationMs?: number;
 }
 
 const TOOL_DEFINITIONS: Array<{
@@ -50,11 +50,6 @@ const TOOL_DEFINITIONS: Array<{
     example: { command: "yarn", args: ["lint"], cwd: ".", timeoutMs: 20000 },
   },
   {
-    name: "web_search",
-    summary: "Search the web through an optional configured provider.",
-    example: { query: "latest Next.js app router docs", maxResults: 5 },
-  },
-  {
     name: "fetch_url",
     summary: "Fetch a specific URL and extract readable text.",
     example: { url: "https://nextjs.org/docs", maxChars: 8000 },
@@ -77,7 +72,7 @@ export function buildHarnessToolManifest(): string {
   return [
     "## Context Harness",
     "You can gather additional context before giving a final answer.",
-    "Use request-only mode when you need more information from artifacts, local files, commands, or the web.",
+    "Use request-only mode when you need more information from artifacts, local files, commands, or direct URLs.",
     "",
     "### Request-Only Mode",
     'A request-only response may contain only `<artifact-request path="..." />` tags and/or `<tool-call name="...">{"..."}</tool-call>` blocks.',

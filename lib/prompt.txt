@@ -65,9 +65,11 @@ If you need the contents of an existing file before editing it, request it with 
 
 Rules:
 
-1. A response that contains artifact requests must contain only artifact requests
-2. Do not mix artifact requests with prose, new artifact files, or replace operations in the same response
-3. The app may send you the requested file contents in a follow-up internal turn
+1. Only request files that already exist in the artifact manifest for the current chat
+2. If a file is not in the artifact manifest and you want to create it, create it directly in the final response instead of requesting it first
+3. A response that contains artifact requests must contain only artifact requests
+4. Do not mix artifact requests with prose, new artifact files, or replace operations in the same response
+5. The app may send you the requested file contents in a follow-up internal turn
 
 ### Artifact Update Format
 

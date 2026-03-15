@@ -1,4 +1,4 @@
-import type { Chat, ChatArtifacts, ChatSession } from "@/types/chat";
+import type { Chat, ChatArtifacts, ChatMessage, ChatSession } from "@/types/chat";
 
 export function createEmptyArtifacts(): ChatArtifacts {
   return {
@@ -26,18 +26,30 @@ export function createEmptyChat(modelId?: string): Chat {
   };
 }
 
+function normalizeMessage(message: ChatMessage): ChatMessage {
+  return {
+    ...message,
+    activities: Array.isArray(message.activities)
+      ? message.activities.map((activity) => ({
+          ...activity,
+          detail: activity.detail ? { ...activity.detail } : undefined,
+        }))
+      : undefined,
+  };
+}
+
 export function normalizeChat(input: Partial<Chat> & Pick<Chat, "id" | "title" | "createdAt">): Chat {
   const sessions =
     input.sessions && input.sessions.length > 0
       ? input.sessions.map((session) => ({
           ...session,
-          messages: session.messages ?? [],
+          messages: (session.messages ?? []).map(normalizeMessage),
         }))
       : input.messages && input.messages.length > 0
         ? [
             {
               id: "migrated",
-              messages: input.messages,
+              messages: input.messages.map(normalizeMessage),
             },
           ]
         : [createEmptySession()];
@@ -45,7 +57,9 @@ export function normalizeChat(input: Partial<Chat> & Pick<Chat, "id" | "title" |
   return {
     id: input.id,
     title: input.title,
-    messages: input.messages ?? sessions.flatMap((session) => session.messages),
+    messages: (input.messages ?? sessions.flatMap((session) => session.messages)).map(
+      normalizeMessage
+    ),
     sessions,
     createdAt: input.createdAt,
     modelId: input.modelId,

@@ -9,6 +9,7 @@ const WORKSPACE_ROOT = process.cwd();
 const MAX_RESULTS_DEFAULT = 60;
 const MAX_RESULT_LINES = 200;
 const MAX_OUTPUT_CHARS = 16000;
+const SKIPPED_DIRECTORIES = new Set([".git", ".next", "node_modules"]);
 const ALLOWED_COMMANDS = new Set([
   "bash",
   "bun",
@@ -86,7 +87,7 @@ function resolveWorkspacePath(rawPath: string): string {
 
 function toDisplayPath(absolutePath: string): string {
   const relative = path.relative(WORKSPACE_ROOT, absolutePath);
-  return relative || ".";
+  return (relative || ".").split(path.sep).join("/");
 }
 
 function truncate(text: string, maxChars = MAX_OUTPUT_CHARS): string {
@@ -104,6 +105,159 @@ function formatLines(lines: string[], maxResults: number): string {
 
 function normalizeGlobArgs(globs: string[]): string[] {
   return globs.flatMap((glob) => ["--glob", glob]);
+}
+
+function globToRegExp(glob: string): RegExp {
+  const normalized = glob.trim().split(path.sep).join("/");
+  const escaped = normalized.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const pattern = escaped
+    .replace(/\*\*/g, "__DOUBLE_STAR__")
+    .replace(/\*/g, "[^/]*")
+    .replace(/\?/g, "[^/]")
+    .replace(/__DOUBLE_STAR__/g, ".*");
+
+  return new RegExp(`^${pattern}$`);
+}
+
+function matchesGlobs(relativePath: string, globs: string[]): boolean {
+  if (globs.length === 0) {
+    return true;
+  }
+
+  return globs.some((glob) => globToRegExp(glob).test(relativePath));
+}
+
+async function collectFiles(
+  targetPath: string,
+  globs: string[]
+): Promise<string[]> {
+  const stats = await fs.stat(targetPath);
+
+  if (stats.isFile()) {
+    const relativePath = toDisplayPath(targetPath);
+    return matchesGlobs(relativePath, globs) ? [relativePath] : [];
+  }
+
+  const collected: string[] = [];
+
+  async function walk(directory: string) {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const absolutePath = path.join(directory, entry.name);
+
+      if (entry.isDirectory()) {
+        if (SKIPPED_DIRECTORIES.has(entry.name)) {
+          continue;
+        }
+
+        await walk(absolutePath);
+        continue;
+      }
+
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      const relativePath = toDisplayPath(absolutePath);
+
+      if (matchesGlobs(relativePath, globs)) {
+        collected.push(relativePath);
+      }
+    }
+  }
+
+  await walk(targetPath);
+  collected.sort((left, right) => left.localeCompare(right));
+  return collected;
+}
+
+async function listFilesFallback(input: Record<string, unknown>): Promise<string> {
+  const target = resolveWorkspacePath(getString(input, "path", "."));
+  const relativeTarget = toDisplayPath(target);
+  const maxResults = clamp(
+    getNumber(input, "maxResults", MAX_RESULTS_DEFAULT),
+    1,
+    MAX_RESULT_LINES
+  );
+  const globs = getStringArray(input, "glob");
+  const files = await collectFiles(target, globs);
+
+  if (files.length === 0) {
+    return `No files found under ${relativeTarget}.`;
+  }
+
+  return [
+    `Listed ${files.length} file(s) under ${relativeTarget}. Showing up to ${maxResults}.`,
+    formatLines(files, maxResults),
+  ].join("\n");
+}
+
+function buildLineMatcher(pattern: string, literal: boolean): (line: string) => boolean {
+  const isCaseInsensitive = pattern.toLowerCase() === pattern;
+
+  if (literal) {
+    const needle = isCaseInsensitive ? pattern.toLowerCase() : pattern;
+
+    return (line: string) => {
+      const haystack = isCaseInsensitive ? line.toLowerCase() : line;
+      return haystack.includes(needle);
+    };
+  }
+
+  const regex = new RegExp(pattern, isCaseInsensitive ? "i" : "");
+  return (line: string) => regex.test(line);
+}
+
+async function searchFilesFallback(input: Record<string, unknown>): Promise<string> {
+  const pattern = getString(input, "pattern");
+
+  if (!pattern) {
+    throw new Error("`search_files` requires a non-empty `pattern`.");
+  }
+
+  const target = resolveWorkspacePath(getString(input, "path", "."));
+  const relativeTarget = toDisplayPath(target);
+  const maxResults = clamp(
+    getNumber(input, "maxResults", MAX_RESULTS_DEFAULT),
+    1,
+    MAX_RESULT_LINES
+  );
+  const globs = getStringArray(input, "glob");
+  const literal = getBoolean(input, "literal", false);
+  const matches: string[] = [];
+  const matcher = buildLineMatcher(pattern, literal);
+  const files = await collectFiles(target, globs);
+
+  for (const relativePath of files) {
+    try {
+      const absolutePath = resolveWorkspacePath(relativePath);
+      const raw = await fs.readFile(absolutePath, "utf8");
+
+      if (raw.includes("\u0000")) {
+        continue;
+      }
+
+      const lines = raw.split(/\r?\n/);
+
+      lines.forEach((line, index) => {
+        if (matcher(line)) {
+          matches.push(`${relativePath}:${index + 1}:${line}`);
+        }
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  if (matches.length === 0) {
+    return `No matches for "${pattern}" in ${relativeTarget}.`;
+  }
+
+  return [
+    `Found ${matches.length} match(es) for "${pattern}" in ${relativeTarget}. Showing up to ${maxResults}.`,
+    formatLines(matches, maxResults),
+  ].join("\n");
 }
 
 async function listFiles(input: Record<string, unknown>): Promise<string> {
@@ -144,7 +298,7 @@ async function listFiles(input: Record<string, unknown>): Promise<string> {
     ].join("\n");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error("The `rg` binary is not available for file listing.");
+      return listFilesFallback(input);
     }
     throw error;
   }
@@ -212,7 +366,7 @@ async function searchFiles(input: Record<string, unknown>): Promise<string> {
     }
 
     if (exitCode === "ENOENT") {
-      throw new Error("The `rg` binary is not available for file search.");
+      return searchFilesFallback(input);
     }
 
     throw error;
@@ -354,63 +508,6 @@ async function runCommand(input: Record<string, unknown>): Promise<string> {
   });
 }
 
-async function webSearch(input: Record<string, unknown>): Promise<string> {
-  const query = getString(input, "query");
-
-  if (!query) {
-    throw new Error("`web_search` requires a `query`.");
-  }
-
-  const apiKey = process.env.TAVILY_API_KEY;
-
-  if (!apiKey) {
-    throw new Error(
-      "`web_search` is not configured. Set `TAVILY_API_KEY` on the server to enable it."
-    );
-  }
-
-  const maxResults = clamp(getNumber(input, "maxResults", 5), 1, 10);
-  const response = await fetch("https://api.tavily.com/search", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      api_key: apiKey,
-      query,
-      max_results: maxResults,
-      include_answer: false,
-      include_raw_content: false,
-      search_depth: "advanced",
-    }),
-  });
-
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`Web search failed: ${message || response.statusText}`);
-  }
-
-  const data = (await response.json()) as {
-    results?: Array<{ title?: string; url?: string; content?: string }>;
-  };
-  const results = Array.isArray(data.results) ? data.results : [];
-
-  if (results.length === 0) {
-    return `No web search results for "${query}".`;
-  }
-
-  return [
-    `Top web results for "${query}":`,
-    ...results.map((result, index) =>
-      [
-        `${index + 1}. ${result.title ?? "Untitled"}`,
-        `URL: ${result.url ?? "unknown"}`,
-        `Snippet: ${truncate(result.content ?? "", 1200)}`,
-      ].join("\n")
-    ),
-  ].join("\n\n");
-}
-
 function stripHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -464,6 +561,7 @@ export async function executeHarnessToolCalls(
 
   for (const call of calls) {
     const safeInput = isRecord(call.input) ? call.input : {};
+    const startedAt = Date.now();
 
     try {
       let output = "";
@@ -481,9 +579,6 @@ export async function executeHarnessToolCalls(
         case "run_command":
           output = await runCommand(safeInput);
           break;
-        case "web_search":
-          output = await webSearch(safeInput);
-          break;
         case "fetch_url":
           output = await fetchUrl(safeInput);
           break;
@@ -496,6 +591,7 @@ export async function executeHarnessToolCalls(
         input: safeInput,
         ok: true,
         output,
+        durationMs: Date.now() - startedAt,
       });
     } catch (error) {
       results.push({
@@ -504,6 +600,7 @@ export async function executeHarnessToolCalls(
         ok: false,
         error:
           error instanceof Error ? error.message : "Tool execution failed.",
+        durationMs: Date.now() - startedAt,
       });
     }
   }

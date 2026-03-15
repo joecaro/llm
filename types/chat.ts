@@ -42,6 +42,41 @@ export interface ChatSession {
   summary?: string;
 }
 
+export type ChatActivityKind =
+  | 'phase'
+  | 'artifact_request'
+  | 'artifact_result'
+  | 'tool_call'
+  | 'tool_result'
+  | 'protocol_retry'
+  | 'finalize';
+
+export type ChatActivityStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed';
+
+export interface ChatActivityDetail {
+  toolName?: string;
+  input?: Record<string, unknown>;
+  output?: string;
+  error?: string;
+  artifactPaths?: string[];
+  pass?: number;
+  durationMs?: number;
+}
+
+export interface ChatActivityEvent {
+  id: string;
+  kind: ChatActivityKind;
+  status: ChatActivityStatus;
+  label: string;
+  startedAt: number;
+  endedAt?: number;
+  detail?: ChatActivityDetail;
+}
+
 export interface Chat {
   id: string;
   title: string;
@@ -57,4 +92,5 @@ export interface ChatMessage {
   content: string;
   role: 'user' | 'assistant';
   createdAt: number;
+  activities?: ChatActivityEvent[];
 }

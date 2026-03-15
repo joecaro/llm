@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Pencil, RotateCcw, X } from "lucide-react";
 import { MessageContent } from "./message-content";
+import { MessageActivities } from "./message-activities";
 import { MessageReasoning } from "./message-reasoning";
-import { ArtifactStatusRow } from "./artifact-status-row";
 import { parseMessageContent } from "@/utils/message-parser";
 import UserInput from "./user-input";
 import { ModelId } from "./model-selector";
@@ -13,7 +13,12 @@ import { getAllMessages, getCurrentSession, useChatStore } from "@/store/chat-st
 import useScrollToBottom from "@/lib/use-scroll-to-bottom";
 import { fetchCompletion, streamCompletion, type StreamStats } from "@/fetches/completion";
 import { ChatStatsBar } from "./chat-stats-bar";
-import { runHarnessAwareTurn, type HarnessLoopStatus } from "@/lib/harness-orchestrator";
+import { runHarnessAwareTurn } from "@/lib/harness-orchestrator";
+import {
+  buildActivityEventId,
+  createActivityEvent,
+  getPhaseLabel,
+} from "@/lib/chat-activity";
 import { isArtifactPreviewable } from "@/utils/artifact-apply";
 import type { ChatMessage, ChatSession } from "@/types/chat";
 import { Button } from "./ui/button";
@@ -56,6 +61,20 @@ function findMessageLocation(
   return null;
 }
 
+function createInitialAssistantActivities() {
+  return [
+    createActivityEvent({
+      id: buildActivityEventId("phase:thinking", 1),
+      kind: "phase",
+      status: "running",
+      label: getPhaseLabel("thinking"),
+      detail: {
+        pass: 1,
+      },
+    }),
+  ];
+}
+
 export function MessagesSection({
   hideSelector = false,
   context = "",
@@ -71,7 +90,6 @@ export function MessagesSection({
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState<ModelId>("bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q5_K_M");
   const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
-  const [artifactStatus, setArtifactStatus] = useState<HarnessLoopStatus | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState("");
 
@@ -79,6 +97,9 @@ export function MessagesSection({
   const currentChatId = useChatStore.use.currentChatId();
   const addMessageToChat = useChatStore.use.addMessageToChat();
   const updateMessageInChat = useChatStore.use.updateMessageInChat();
+  const setMessageActivities = useChatStore.use.setMessageActivities();
+  const upsertMessageActivity = useChatStore.use.upsertMessageActivity();
+  const finalizeMessageActivity = useChatStore.use.finalizeMessageActivity();
   const replaceMessageAndTruncateChat =
     useChatStore.use.replaceMessageAndTruncateChat();
   const updateChatTitle = useChatStore.use.updateChatTitle();
@@ -115,6 +136,42 @@ export function MessagesSection({
       : chat?.messages.length
         ? [{ id: "default", messages: chat.messages }]
         : [];
+
+  function markRunningActivitiesFailed(
+    chatId: string,
+    messageId: string,
+    errorText: string
+  ) {
+    const activeChat = useChatStore
+      .getState()
+      .chats.find((candidate) => candidate.id === chatId);
+    const activeMessage = activeChat
+      ? getAllMessages(activeChat).find((message) => message.id === messageId)
+      : null;
+
+    if (!activeMessage?.activities?.length) {
+      return;
+    }
+
+    const endedAt = Date.now();
+    const nextActivities = activeMessage.activities.map((activity) => {
+      if (activity.status !== "running" && activity.status !== "pending") {
+        return activity;
+      }
+
+      return {
+        ...activity,
+        status: "failed" as const,
+        endedAt,
+        detail: {
+          ...(activity.detail ?? {}),
+          error: errorText,
+        },
+      };
+    });
+
+    setMessageActivities(chatId, messageId, nextActivities);
+  }
 
   async function handleSubmit(formData: FormData) {
     const userMessage = formData.get("message") as string;
@@ -161,17 +218,13 @@ export function MessagesSection({
     setIsLoading(true);
     isStreaming.current = true;
     setStreamStats(null);
-    setArtifactStatus({
-      pass: 1,
-      phase: "thinking",
-      message: "Thinking (1/6)",
-    });
 
     addMessageToChat(currentChat.id, {
       id: assistantMessageId,
       role: "assistant",
       content: "",
       createdAt: Date.now(),
+      activities: createInitialAssistantActivities(),
     });
 
     try {
@@ -185,7 +238,19 @@ export function MessagesSection({
         userMessage,
         artifacts: currentChat.artifacts,
         assistantMessageId,
-        onStatus: setArtifactStatus,
+        onActivity: (activity) => {
+          if (currentChatIdRef.current !== currentChat.id) return;
+          upsertMessageActivity(currentChat.id, assistantMessageId, activity);
+        },
+        onActivityUpdate: (activityId, patch) => {
+          if (currentChatIdRef.current !== currentChat.id) return;
+          finalizeMessageActivity(
+            currentChat.id,
+            assistantMessageId,
+            activityId,
+            patch
+          );
+        },
         onStats: setStreamStats,
         onVisibleContent: (content) => {
           if (currentChatIdRef.current !== currentChat.id) return;
@@ -226,6 +291,13 @@ export function MessagesSection({
       console.error("Error running harness-aware turn:", error);
 
       if (currentChatIdRef.current === currentChat.id) {
+        markRunningActivitiesFailed(
+          currentChat.id,
+          assistantMessageId,
+          error instanceof Error
+            ? error.message
+            : "Error while generating the response."
+        );
         updateMessageInChat(
           currentChat.id,
           assistantMessageId,
@@ -234,7 +306,6 @@ export function MessagesSection({
       }
     } finally {
       isStreaming.current = false;
-      setArtifactStatus(null);
       setIsLoading(false);
     }
   }
@@ -296,17 +367,13 @@ export function MessagesSection({
     setIsLoading(true);
     isStreaming.current = true;
     setStreamStats(null);
-    setArtifactStatus({
-      pass: 1,
-      phase: "thinking",
-      message: "Thinking (1/6)",
-    });
 
     addMessageToChat(chat.id, {
       id: assistantMessageId,
       role: "assistant",
       content: "",
       createdAt: Date.now(),
+      activities: createInitialAssistantActivities(),
     });
 
     try {
@@ -320,7 +387,14 @@ export function MessagesSection({
         userMessage: nextContent,
         artifacts: refreshedChat.artifacts,
         assistantMessageId,
-        onStatus: setArtifactStatus,
+        onActivity: (activity) => {
+          if (currentChatIdRef.current !== chat.id) return;
+          upsertMessageActivity(chat.id, assistantMessageId, activity);
+        },
+        onActivityUpdate: (activityId, patch) => {
+          if (currentChatIdRef.current !== chat.id) return;
+          finalizeMessageActivity(chat.id, assistantMessageId, activityId, patch);
+        },
         onStats: setStreamStats,
         onVisibleContent: (content) => {
           if (currentChatIdRef.current !== chat.id) return;
@@ -358,6 +432,13 @@ export function MessagesSection({
       console.error("Error restarting from edited message:", error);
 
       if (currentChatIdRef.current === chat.id) {
+        markRunningActivitiesFailed(
+          chat.id,
+          assistantMessageId,
+          error instanceof Error
+            ? error.message
+            : "Error while generating the response."
+        );
         updateMessageInChat(
           chat.id,
           assistantMessageId,
@@ -366,7 +447,6 @@ export function MessagesSection({
       }
     } finally {
       isStreaming.current = false;
-      setArtifactStatus(null);
       setIsLoading(false);
     }
   }
@@ -548,12 +628,25 @@ export function MessagesSection({
                             </div>
                           ) : (
                             <>
-                              <MessageReasoning content={message.content} />
-                              <MessageContent
-                                content={message.content}
-                                chatId={chat?.id}
-                                messageId={message.id}
-                              />
+                              {isAssistant && (
+                                <MessageActivities activities={message.activities} />
+                              )}
+                              {message.content ? (
+                                <>
+                                  <MessageReasoning content={message.content} />
+                                  <MessageContent
+                                    content={message.content}
+                                    chatId={chat?.id}
+                                    messageId={message.id}
+                                  />
+                                </>
+                              ) : !isAssistant || !message.activities?.length ? (
+                                <MessageContent
+                                  content={message.content}
+                                  chatId={chat?.id}
+                                  messageId={message.id}
+                                />
+                              ) : null}
                             </>
                           )}
                           {!isAssistant && editingMessageId !== message.id && (
@@ -596,16 +689,6 @@ export function MessagesSection({
             </div>
           )}
 
-          {artifactStatus && (
-            <div className="flex gap-3 md:gap-4 items-start w-full">
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-primary text-xs font-medium shrink-0">
-                AI
-              </div>
-              <div className="flex-1 min-w-0">
-                <ArtifactStatusRow status={artifactStatus} />
-              </div>
-            </div>
-          )}
         </div>
       </div>
 

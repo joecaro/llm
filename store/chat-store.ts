@@ -1,6 +1,12 @@
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { Chat, ChatArtifacts, ChatMessage, ChatSession } from "@/types/chat";
+import type {
+  Chat,
+  ChatActivityEvent,
+  ChatArtifacts,
+  ChatMessage,
+  ChatSession,
+} from "@/types/chat";
 import { createEmptyChat, createEmptySession, normalizeChat } from "@/utils/create-empty-chat";
 
 interface ChatStore {
@@ -30,6 +36,22 @@ interface ChatStore {
     chatId: string,
     messageId: string,
     content: string
+  ) => void;
+  setMessageActivities: (
+    chatId: string,
+    messageId: string,
+    activities: ChatActivityEvent[]
+  ) => void;
+  upsertMessageActivity: (
+    chatId: string,
+    messageId: string,
+    activity: ChatActivityEvent
+  ) => void;
+  finalizeMessageActivity: (
+    chatId: string,
+    messageId: string,
+    activityId: string,
+    patch: Partial<Omit<ChatActivityEvent, "id">>
   ) => void;
   replaceMessageAndTruncateChat: (
     chatId: string,
@@ -61,6 +83,76 @@ function pruneArtifactsForMessages(
   return {
     files,
     order: chat.artifacts.order.filter((path) => files[path]),
+  };
+}
+
+function mergeActivityEvent(
+  current: ChatActivityEvent,
+  patch: Partial<Omit<ChatActivityEvent, "id">> | ChatActivityEvent
+): ChatActivityEvent {
+  return {
+    ...current,
+    ...patch,
+    detail:
+      current.detail || patch.detail
+        ? {
+            ...(current.detail ?? {}),
+            ...(patch.detail ?? {}),
+          }
+        : undefined,
+  };
+}
+
+function updateChatMessage(
+  chat: Chat,
+  messageId: string,
+  updater: (message: ChatMessage) => ChatMessage
+): Chat {
+  if (chat.sessions && chat.sessions.length > 0) {
+    let hasUpdated = false;
+    const sessions = chat.sessions.map((session) => {
+      let sessionUpdated = false;
+      const messages = session.messages.map((message) => {
+        if (message.id !== messageId) {
+          return message;
+        }
+
+        hasUpdated = true;
+        sessionUpdated = true;
+        return updater(message);
+      });
+
+      return sessionUpdated ? { ...session, messages } : session;
+    });
+
+    if (!hasUpdated) {
+      return chat;
+    }
+
+    return {
+      ...chat,
+      sessions,
+      messages: getAllMessagesFromSessions(sessions),
+    };
+  }
+
+  let hasUpdated = false;
+  const messages = chat.messages.map((message) => {
+    if (message.id !== messageId) {
+      return message;
+    }
+
+    hasUpdated = true;
+    return updater(message);
+  });
+
+  if (!hasUpdated) {
+    return chat;
+  }
+
+  return {
+    ...chat,
+    messages,
   };
 }
 
@@ -298,27 +390,75 @@ const useChatStoreBase = create<ChatStore>()(
         chats: state.chats.map((chat) => {
           if (chat.id !== chatId) return chat;
 
-          if (chat.sessions && chat.sessions.length > 0) {
-            const sessions = chat.sessions.map((session) => ({
-              ...session,
-              messages: session.messages.map((message) =>
-                message.id === messageId ? { ...message, content } : message
-              ),
-            }));
+          return updateChatMessage(chat, messageId, (message) => ({
+            ...message,
+            content,
+          }));
+        }),
+      })),
+    setMessageActivities: (chatId, messageId, activities) =>
+      set((state) => ({
+        chats: state.chats.map((chat) => {
+          if (chat.id !== chatId) return chat;
+
+          return updateChatMessage(chat, messageId, (message) => ({
+            ...message,
+            activities: activities.length > 0 ? [...activities] : undefined,
+          }));
+        }),
+      })),
+    upsertMessageActivity: (chatId, messageId, activity) =>
+      set((state) => ({
+        chats: state.chats.map((chat) => {
+          if (chat.id !== chatId) return chat;
+
+          return updateChatMessage(chat, messageId, (message) => {
+            const activities = [...(message.activities ?? [])];
+            const existingIndex = activities.findIndex(
+              (candidate) => candidate.id === activity.id
+            );
+
+            if (existingIndex === -1) {
+              activities.push(activity);
+            } else {
+              activities[existingIndex] = mergeActivityEvent(
+                activities[existingIndex],
+                activity
+              );
+            }
 
             return {
-              ...chat,
-              sessions,
-              messages: getAllMessagesFromSessions(sessions),
+              ...message,
+              activities,
             };
-          }
+          });
+        }),
+      })),
+    finalizeMessageActivity: (chatId, messageId, activityId, patch) =>
+      set((state) => ({
+        chats: state.chats.map((chat) => {
+          if (chat.id !== chatId) return chat;
 
-          return {
-            ...chat,
-            messages: chat.messages.map((message) =>
-              message.id === messageId ? { ...message, content } : message
-            ),
-          };
+          return updateChatMessage(chat, messageId, (message) => {
+            const activities = [...(message.activities ?? [])];
+            const existingIndex = activities.findIndex(
+              (candidate) => candidate.id === activityId
+            );
+
+            if (existingIndex === -1) {
+              return message;
+            }
+
+            activities[existingIndex] = mergeActivityEvent(
+              activities[existingIndex],
+              patch
+            );
+
+            return {
+              ...message,
+              activities,
+            };
+          });
         }),
       })),
     replaceMessageAndTruncateChat: (chatId, messageId, content) =>

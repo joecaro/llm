@@ -23,7 +23,9 @@ export function buildArtifactManifest(artifacts: ChatArtifacts): string {
     );
 
   return [
-    "Artifact manifest for this chat. Request file contents with <artifact-request path=\"...\" /> before editing if the manifest alone is not enough.",
+    "Artifact manifest for this chat. These are the only existing artifact files in the current conversation.",
+    "Only request file contents with <artifact-request path=\"...\" /> for paths already present in this manifest.",
+    "If you want a new file at a path that is not in this manifest, create it directly in your final response instead of requesting it first.",
     "<artifact-manifest>",
     ...lines,
     "</artifact-manifest>",
@@ -53,7 +55,7 @@ export function buildArtifactSourceContext(
   if (missingPath) {
     return {
       ok: false,
-      error: `The requested artifact "${missingPath}" does not exist in the current chat.`,
+      error: `The requested artifact "${missingPath}" does not exist in the current chat. Only request files listed in the artifact manifest. If you want a new file at that path, create it directly in your final response instead of requesting it first.`,
     };
   }
 

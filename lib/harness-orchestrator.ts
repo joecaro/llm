@@ -1,4 +1,8 @@
-import type { ArtifactLanguage, Message } from "@/types/chat";
+import type {
+  ArtifactLanguage,
+  ChatActivityEvent,
+  Message,
+} from "@/types/chat";
 import type { ChatArtifacts } from "@/types/chat";
 import { streamCompletion, type StreamStats } from "@/fetches/completion";
 import {
@@ -8,6 +12,13 @@ import {
   type HarnessToolCall,
   type HarnessToolResult,
 } from "@/lib/harness-protocol";
+import {
+  buildActivityEventId,
+  createActivityEvent,
+  getArtifactActivityLabel,
+  getPhaseLabel,
+  getToolActivityLabel,
+} from "@/lib/chat-activity";
 import { applyArtifactOperations } from "@/utils/artifact-apply";
 import {
   buildArtifactManifest,
@@ -50,6 +61,11 @@ interface RunHarnessTurnParams {
   artifacts: ChatArtifacts;
   assistantMessageId: string;
   onStatus?: (status: HarnessLoopStatus | null) => void;
+  onActivity?: (activity: ChatActivityEvent) => void;
+  onActivityUpdate?: (
+    activityId: string,
+    patch: Partial<Omit<ChatActivityEvent, "id">>
+  ) => void;
   onStats?: (stats: StreamStats) => void;
   onVisibleContent?: (content: string, pass: number) => void;
   isCancelled?: () => boolean;
@@ -86,6 +102,13 @@ function stripMachineBlocks(content: string, blocks: MachineBlock[]): string {
 
   stripped += content.slice(cursor);
   return stripped.trim();
+}
+
+function stripReasoningBlocks(content: string): string {
+  return content
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/<think>[\s\S]*$/g, "")
+    .trim();
 }
 
 function assertNotCancelled(isCancelled?: () => boolean) {
@@ -397,6 +420,16 @@ function buildContextResultMessage(params: {
   return sections.join("\n\n");
 }
 
+function mergeActivityDetail(params: {
+  pass: number;
+  detail?: ChatActivityEvent["detail"];
+}): ChatActivityEvent["detail"] {
+  return {
+    pass: params.pass,
+    ...(params.detail ?? {}),
+  };
+}
+
 export async function runHarnessAwareTurn({
   model,
   systemContent,
@@ -405,6 +438,8 @@ export async function runHarnessAwareTurn({
   artifacts,
   assistantMessageId,
   onStatus,
+  onActivity,
+  onActivityUpdate,
   onStats,
   onVisibleContent,
   isCancelled,
@@ -415,11 +450,104 @@ export async function runHarnessAwareTurn({
   let lastProtocolError =
     "The assistant did not produce a valid harness response before the loop limit was reached.";
 
+  const emitActivity = (activity: ChatActivityEvent) => {
+    onActivity?.(activity);
+  };
+
+  const updateActivity = (
+    activityId: string,
+    patch: Partial<Omit<ChatActivityEvent, "id">>
+  ) => {
+    onActivityUpdate?.(activityId, patch);
+  };
+
+  const completeActivity = (
+    activityId: string,
+    patch: Partial<Omit<ChatActivityEvent, "id">> = {}
+  ) => {
+    updateActivity(activityId, {
+      ...patch,
+      status: "completed",
+      endedAt: patch.endedAt ?? Date.now(),
+    });
+  };
+
+  const failActivity = (
+    activityId: string,
+    patch: Partial<Omit<ChatActivityEvent, "id">> = {}
+  ) => {
+    updateActivity(activityId, {
+      ...patch,
+      status: "failed",
+      endedAt: patch.endedAt ?? Date.now(),
+    });
+  };
+
+  const startPhaseActivity = (
+    pass: number,
+    phase: HarnessLoopStatus["phase"]
+  ): string => {
+    const activityId = buildActivityEventId(`phase:${phase}`, pass);
+
+    emitActivity(
+      createActivityEvent({
+        id: activityId,
+        kind: "phase",
+        status: "running",
+        label: getPhaseLabel(phase),
+        detail: {
+          pass,
+        },
+      })
+    );
+
+    return activityId;
+  };
+
+  const emitProtocolRetryActivity = (pass: number, error: string) => {
+    emitActivity(
+      createActivityEvent({
+        id: buildActivityEventId("protocol_retry", pass),
+        kind: "protocol_retry",
+        status: "failed",
+        label: "Retrying after invalid harness response",
+        detail: {
+          pass,
+          error,
+        },
+        endedAt: Date.now(),
+      })
+    );
+  };
+
+  const emitFinalizeActivity = (
+    pass: number,
+    label: string,
+    detail?: ChatActivityEvent["detail"]
+  ) => {
+    emitActivity(
+      createActivityEvent({
+        id: buildActivityEventId("finalize", pass),
+        kind: "finalize",
+        status: "completed",
+        label,
+        detail: mergeActivityDetail({
+          pass,
+          detail,
+        }),
+        endedAt: Date.now(),
+      })
+    );
+  };
+
   for (let pass = 1; pass <= MAX_PASSES; pass += 1) {
     assertNotCancelled(isCancelled);
+    const phase = pass === 1 ? "thinking" : "retrying";
+    const phaseActivityId = startPhaseActivity(pass, phase);
+
     onStatus?.({
       pass,
-      phase: pass === 1 ? "thinking" : "retrying",
+      phase,
       message: `Thinking (${pass}/${MAX_PASSES})`,
     });
 
@@ -466,6 +594,7 @@ export async function runHarnessAwareTurn({
       ...parsedArtifacts.blocks,
       ...parsedTools.blocks,
     ]);
+    const strippedVisibleContent = stripReasoningBlocks(strippedContent);
     const fallbackParsed =
       requestDirectives.length === 0 &&
       editDirectives.length === 0 &&
@@ -482,6 +611,12 @@ export async function runHarnessAwareTurn({
 
     if (parsedTools.errors.length > 0) {
       lastProtocolError = parsedTools.errors.join(" ");
+      failActivity(phaseActivityId, {
+        detail: {
+          error: lastProtocolError,
+        },
+      });
+      emitProtocolRetryActivity(pass, lastProtocolError);
       onVisibleContent?.("", pass);
       loopMessages.push({ role: "assistant", content: passContent });
       loopMessages.push({
@@ -492,23 +627,32 @@ export async function runHarnessAwareTurn({
     }
 
     if (requestDirectives.length > 0 || toolCalls.length > 0) {
-      if (editDirectives.length > 0 || fallbackParsed || strippedContent) {
+      if (editDirectives.length > 0 || fallbackParsed || strippedVisibleContent) {
         lastProtocolError =
           "Request-only responses may contain only artifact requests and tool calls.";
 
+        failActivity(phaseActivityId, {
+          detail: {
+            error: lastProtocolError,
+          },
+        });
+        emitProtocolRetryActivity(pass, lastProtocolError);
         onVisibleContent?.("", pass);
         loopMessages.push({ role: "assistant", content: passContent });
         loopMessages.push({
           role: "system",
-          content: buildHarnessProtocolError(lastProtocolError),
+        content: buildHarnessProtocolError(lastProtocolError),
         });
         continue;
       }
+
+      completeActivity(phaseActivityId);
 
       const requestedPaths = requestDirectives.map((directive) => directive.path);
       let artifactSourceContent: string | undefined;
 
       if (requestedPaths.length > 0) {
+        const artifactActivityId = buildActivityEventId("artifact_request", pass);
         const sourceContext = buildArtifactSourceContext(
           workingArtifacts,
           requestedPaths
@@ -516,6 +660,21 @@ export async function runHarnessAwareTurn({
 
         if (!sourceContext.ok) {
           lastProtocolError = sourceContext.error;
+          emitActivity(
+            createActivityEvent({
+              id: artifactActivityId,
+              kind: "artifact_request",
+              status: "failed",
+              label: getArtifactActivityLabel(requestedPaths),
+              detail: {
+                pass,
+                artifactPaths: requestedPaths,
+                error: sourceContext.error,
+              },
+              endedAt: Date.now(),
+            })
+          );
+          emitProtocolRetryActivity(pass, sourceContext.error);
           onVisibleContent?.("", pass);
           loopMessages.push({ role: "assistant", content: passContent });
           loopMessages.push({
@@ -525,6 +684,19 @@ export async function runHarnessAwareTurn({
           continue;
         }
 
+        emitActivity(
+          createActivityEvent({
+            id: artifactActivityId,
+            kind: "artifact_request",
+            status: "running",
+            label: getArtifactActivityLabel(requestedPaths),
+            detail: {
+              pass,
+              artifactPaths: requestedPaths,
+            },
+          })
+        );
+
         onStatus?.({
           pass,
           phase: "reading",
@@ -532,11 +704,38 @@ export async function runHarnessAwareTurn({
         });
 
         artifactSourceContent = sourceContext.content;
+        completeActivity(artifactActivityId, {
+          kind: "artifact_result",
+          detail: {
+            artifactPaths: requestedPaths,
+            output: artifactSourceContent,
+          },
+        });
       }
 
       let toolResults: HarnessToolResult[] = [];
 
       if (toolCalls.length > 0) {
+        const toolActivityIds = toolCalls.map((call, index) => {
+          const activityId = buildActivityEventId(`tool:${call.name}`, pass, index);
+
+          emitActivity(
+            createActivityEvent({
+              id: activityId,
+              kind: "tool_call",
+              status: "running",
+              label: getToolActivityLabel(call.name, call.input),
+              detail: {
+                pass,
+                toolName: call.name,
+                input: call.input,
+              },
+            })
+          );
+
+          return activityId;
+        });
+
         onStatus?.({
           pass,
           phase: "calling-tools",
@@ -544,7 +743,43 @@ export async function runHarnessAwareTurn({
             .map((call) => call.name)
             .join(", ")}`,
         });
-        toolResults = await executeToolCalls(toolCalls);
+
+        try {
+          toolResults = await executeToolCalls(toolCalls);
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to execute harness tools.";
+
+          toolActivityIds.forEach((activityId, index) => {
+            failActivity(activityId, {
+              kind: "tool_result",
+              detail: {
+                toolName: toolCalls[index]?.name,
+                input: toolCalls[index]?.input ?? {},
+                error: message,
+              },
+            });
+          });
+
+          throw error;
+        }
+
+        toolResults.forEach((result, index) => {
+          updateActivity(toolActivityIds[index]!, {
+            kind: "tool_result",
+            status: result.ok ? "completed" : "failed",
+            endedAt: Date.now(),
+            detail: {
+              toolName: result.name,
+              input: result.input,
+              output: result.output,
+              error: result.error,
+              durationMs: result.durationMs,
+            },
+          });
+        });
       }
 
       onVisibleContent?.("", pass);
@@ -560,6 +795,9 @@ export async function runHarnessAwareTurn({
     }
 
     if (editDirectives.length > 0 || fallbackParsed) {
+      completeActivity(phaseActivityId);
+      const applyingActivityId = startPhaseActivity(pass, "applying");
+
       onStatus?.({
         pass,
         phase: "applying",
@@ -574,6 +812,12 @@ export async function runHarnessAwareTurn({
 
       if (!applied.ok) {
         lastProtocolError = applied.error;
+        failActivity(applyingActivityId, {
+          detail: {
+            error: applied.error,
+          },
+        });
+        emitProtocolRetryActivity(pass, applied.error);
         onVisibleContent?.("", pass);
         loopMessages.push({ role: "assistant", content: passContent });
         loopMessages.push({
@@ -584,6 +828,11 @@ export async function runHarnessAwareTurn({
       }
 
       workingArtifacts = applied.artifacts;
+      completeActivity(applyingActivityId, {
+        detail: {
+          artifactPaths: applied.changedPaths,
+        },
+      });
 
       onStatus?.({
         pass,
@@ -593,6 +842,15 @@ export async function runHarnessAwareTurn({
           : "Finalizing response",
       });
 
+      emitFinalizeActivity(
+        pass,
+        applied.changedPaths.length
+          ? `Updated ${applied.changedPaths.length} artifact${applied.changedPaths.length === 1 ? "" : "s"}`
+          : "Finalizing response",
+        {
+          artifactPaths: applied.changedPaths,
+        }
+      );
       onStatus?.(null);
 
       return {
@@ -602,6 +860,8 @@ export async function runHarnessAwareTurn({
       };
     }
 
+    completeActivity(phaseActivityId);
+    emitFinalizeActivity(pass, "Final response ready");
     onStatus?.(null);
 
     return {
@@ -611,6 +871,19 @@ export async function runHarnessAwareTurn({
     };
   }
 
+  emitActivity(
+    createActivityEvent({
+      id: buildActivityEventId("finalize", MAX_PASSES + 1),
+      kind: "finalize",
+      status: "failed",
+      label: "Failed to complete the request",
+      detail: {
+        pass: MAX_PASSES,
+        error: lastProtocolError,
+      },
+      endedAt: Date.now(),
+    })
+  );
   onStatus?.(null);
 
   return {
