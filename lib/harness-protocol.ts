@@ -84,6 +84,11 @@ export function buildHarnessToolManifest(): string {
     "",
     "Use tools to gather context.",
     "Use artifacts to persist deliverables such as reports, CSVs, and markdown documents with Mermaid diagrams.",
+    "For data-backed analysis or research reports, prefer a small bundle such as `reports/<topic>/report.md` plus `reports/<topic>/data.csv` when structured values are available.",
+    "For factual or data-backed work, gather context before making numeric claims, monthly tables, or comparisons.",
+    "If you successfully fetch external URLs for a report, include `reports/<topic>/sources.md` for provenance.",
+    "Do not invent structured datasets. If the source data is incomplete, gather more context or give a sourced prose summary instead.",
+    "Use standard fenced ` ```mermaid ` blocks for Mermaid diagrams. Do not use placeholder syntax like `[mermaid]`.",
   ].join("\n");
 }
 
@@ -95,6 +100,7 @@ export function buildHarnessProtocolError(error: string): string {
     '1. Request-only mode with any mix of `<artifact-request path="..." />` and `<tool-call name="...">{"..."}</tool-call>`.',
     '2. Final mode with prose and/or `<artifact path="...">...</artifact>` or `<artifact-replace ...>...</artifact-replace>`.',
     "Do not mix request-only mode with prose or artifact writes.",
+    "Use `<artifact-request ... />` only for files that already exist in the current artifact manifest.",
     "Tool-call bodies must be valid JSON objects.",
   ].join("\n");
 }

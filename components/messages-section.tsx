@@ -19,6 +19,7 @@ import {
   createActivityEvent,
   getPhaseLabel,
 } from "@/lib/chat-activity";
+import { REPORT_BUNDLE_INTENT_RE } from "@/lib/report-bundles";
 import { isArtifactPreviewable } from "@/utils/artifact-apply";
 import type { ChatMessage, ChatSession } from "@/types/chat";
 import { Button } from "./ui/button";
@@ -30,18 +31,32 @@ const SMALL_SNIPPET_RE =
   /\b(snippet|small snippet|tiny snippet|quick snippet|one-liner|one liner|short example)\b/i;
 
 function buildArtifactPreferenceHint(userMessage: string, hasArtifacts: boolean) {
+  const hints: string[] = [];
+
   if (SMALL_SNIPPET_RE.test(userMessage)) {
     return "";
   }
 
-  if (hasArtifacts || ARTIFACT_PREFERRED_INTENT_RE.test(userMessage)) {
-    return [
-      "For this request, prefer the artifact filesystem for any non-trivial component or reusable UI output.",
-      "Use bare code fences only for very small snippets or quick examples.",
-    ].join("\n");
+  if (REPORT_BUNDLE_INTENT_RE.test(userMessage)) {
+    hints.push(
+      "For research, pricing, comparison, cost, and other data-backed report requests, prefer a report bundle instead of a single markdown file.",
+      "Gather context before making numeric claims, monthly tables, or comparisons. Do not invent structured datasets.",
+      "Use `reports/<topic>/report.md` for the narrative report.",
+      "If you cite structured figures, rows, comparisons, or extracted values, also create `reports/<topic>/data.csv`.",
+      "If you fetch external URLs successfully, also create `reports/<topic>/sources.md`.",
+      "If a richer presentation would help, you may additionally create `reports/<topic>/dashboard.html` or `reports/<topic>/dashboard.tsx`.",
+      "Use standard fenced ` ```mermaid ` blocks for Mermaid diagrams. Do not use placeholder syntax like `[mermaid]`."
+    );
   }
 
-  return "";
+  if (hasArtifacts || ARTIFACT_PREFERRED_INTENT_RE.test(userMessage)) {
+    hints.push(
+      "For this request, prefer the artifact filesystem for any non-trivial component or reusable UI output.",
+      "Use bare code fences only for very small snippets or quick examples."
+    );
+  }
+
+  return hints.join("\n");
 }
 
 function findMessageLocation(
@@ -70,6 +85,7 @@ function createInitialAssistantActivities() {
       label: getPhaseLabel("thinking"),
       detail: {
         pass: 1,
+        attemptLabel: "Attempt 1",
       },
     }),
   ];

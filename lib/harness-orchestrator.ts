@@ -16,9 +16,19 @@ import {
   buildActivityEventId,
   createActivityEvent,
   getArtifactActivityLabel,
+  getArtifactResultActivityLabel,
+  getCompletedToolActivityLabel,
   getPhaseLabel,
   getToolActivityLabel,
 } from "@/lib/chat-activity";
+import {
+  buildTurnPolicy,
+  createTurnEvidenceSummary,
+  recordArtifactSourceEvidence,
+  recordToolResultEvidence,
+  validateTurnFinalization,
+} from "@/lib/harness-guardrails";
+import { inferReportBundlePaths, REPORT_BUNDLE_INTENT_RE } from "@/lib/report-bundles";
 import { applyArtifactOperations } from "@/utils/artifact-apply";
 import {
   buildArtifactManifest,
@@ -192,9 +202,11 @@ function inferFallbackDocumentPath(
     };
   }
 
-  if (/\b(report|summary|analysis)\b/.test(lowerUserMessage)) {
+  if (REPORT_BUNDLE_INTENT_RE.test(userMessage)) {
+    const reportPaths = inferReportBundlePaths(userMessage);
+
     return {
-      path: "reports/summary.md",
+      path: reportPaths.reportPath,
       language: "md",
     };
   }
@@ -295,6 +307,7 @@ function synthesizeArtifactFallback(params: {
   const explicitArtifactRequest =
     /\bartifact\b/i.test(params.userMessage) ||
     /\b(as|into)\s+an?\s+artifact\b/i.test(params.userMessage);
+  const reportIntent = REPORT_BUNDLE_INTENT_RE.test(params.userMessage);
   const componentIntent =
     /\b(component|widget|ui|page|app|react|tsx|jsx)\b/i.test(
       params.userMessage
@@ -312,10 +325,7 @@ function synthesizeArtifactFallback(params: {
         ? trailingText
         : "";
 
-    if (
-      explicitArtifactRequest ||
-      (params.artifacts.order.length === 0 && componentIntent)
-    ) {
+    if (!reportIntent && (explicitArtifactRequest || (params.artifacts.order.length === 0 && componentIntent))) {
       if (language === "markdown" || language === "md" || language === "csv") {
         const fallback = inferFallbackDocumentPath(fileContent, params.userMessage);
 
@@ -342,11 +352,18 @@ function synthesizeArtifactFallback(params: {
   const previousUserMessage = [...params.sessionMessages]
     .reverse()
     .find((message) => message.role === "user")?.content;
+  const priorReportIntent = REPORT_BUNDLE_INTENT_RE.test(
+    previousUserMessage ?? params.userMessage
+  );
 
   if (
-    explicitArtifactRequest ||
-    /\b(email|document|plan|report|brief|csv|markdown|diagram)\b/i.test(
-      previousUserMessage ?? ""
+    !reportIntent &&
+    !priorReportIntent &&
+    (
+      explicitArtifactRequest ||
+      /\b(email|document|plan|brief|csv|markdown|diagram)\b/i.test(
+        previousUserMessage ?? ""
+      )
     )
   ) {
     const fallback = inferFallbackDocumentPath(
@@ -420,12 +437,17 @@ function buildContextResultMessage(params: {
   return sections.join("\n\n");
 }
 
+function getAttemptLabel(pass: number): string {
+  return `Attempt ${pass}`;
+}
+
 function mergeActivityDetail(params: {
   pass: number;
   detail?: ChatActivityEvent["detail"];
 }): ChatActivityEvent["detail"] {
   return {
     pass: params.pass,
+    attemptLabel: getAttemptLabel(params.pass),
     ...(params.detail ?? {}),
   };
 }
@@ -447,6 +469,8 @@ export async function runHarnessAwareTurn({
   let workingArtifacts = artifacts;
   const loopMessages: Message[] = [];
   const statsTotals = { tokens: 0, elapsed: 0 };
+  const policy = buildTurnPolicy(userMessage, artifacts.order.length > 0);
+  const evidence = createTurnEvidenceSummary();
   let lastProtocolError =
     "The assistant did not produce a valid harness response before the loop limit was reached.";
 
@@ -495,9 +519,9 @@ export async function runHarnessAwareTurn({
         kind: "phase",
         status: "running",
         label: getPhaseLabel(phase),
-        detail: {
+        detail: mergeActivityDetail({
           pass,
-        },
+        }),
       })
     );
 
@@ -511,10 +535,12 @@ export async function runHarnessAwareTurn({
         kind: "protocol_retry",
         status: "failed",
         label: "Retrying after invalid harness response",
-        detail: {
+        detail: mergeActivityDetail({
           pass,
-          error,
-        },
+          detail: {
+            error,
+          },
+        }),
         endedAt: Date.now(),
       })
     );
@@ -612,9 +638,12 @@ export async function runHarnessAwareTurn({
     if (parsedTools.errors.length > 0) {
       lastProtocolError = parsedTools.errors.join(" ");
       failActivity(phaseActivityId, {
-        detail: {
-          error: lastProtocolError,
-        },
+        detail: mergeActivityDetail({
+          pass,
+          detail: {
+            error: lastProtocolError,
+          },
+        }),
       });
       emitProtocolRetryActivity(pass, lastProtocolError);
       onVisibleContent?.("", pass);
@@ -632,16 +661,19 @@ export async function runHarnessAwareTurn({
           "Request-only responses may contain only artifact requests and tool calls.";
 
         failActivity(phaseActivityId, {
-          detail: {
-            error: lastProtocolError,
-          },
+          detail: mergeActivityDetail({
+            pass,
+            detail: {
+              error: lastProtocolError,
+            },
+          }),
         });
         emitProtocolRetryActivity(pass, lastProtocolError);
         onVisibleContent?.("", pass);
         loopMessages.push({ role: "assistant", content: passContent });
         loopMessages.push({
           role: "system",
-        content: buildHarnessProtocolError(lastProtocolError),
+          content: buildHarnessProtocolError(lastProtocolError),
         });
         continue;
       }
@@ -666,11 +698,14 @@ export async function runHarnessAwareTurn({
               kind: "artifact_request",
               status: "failed",
               label: getArtifactActivityLabel(requestedPaths),
-              detail: {
+              detail: mergeActivityDetail({
                 pass,
-                artifactPaths: requestedPaths,
-                error: sourceContext.error,
-              },
+                detail: {
+                  artifactPaths: requestedPaths,
+                  error: sourceContext.error,
+                  evidenceStrength: "none",
+                },
+              }),
               endedAt: Date.now(),
             })
           );
@@ -690,10 +725,12 @@ export async function runHarnessAwareTurn({
             kind: "artifact_request",
             status: "running",
             label: getArtifactActivityLabel(requestedPaths),
-            detail: {
+            detail: mergeActivityDetail({
               pass,
-              artifactPaths: requestedPaths,
-            },
+              detail: {
+                artifactPaths: requestedPaths,
+              },
+            }),
           })
         );
 
@@ -704,12 +741,21 @@ export async function runHarnessAwareTurn({
         });
 
         artifactSourceContent = sourceContext.content;
+        const evidenceStrength = recordArtifactSourceEvidence(
+          evidence,
+          requestedPaths
+        );
         completeActivity(artifactActivityId, {
           kind: "artifact_result",
-          detail: {
-            artifactPaths: requestedPaths,
-            output: artifactSourceContent,
-          },
+          label: getArtifactResultActivityLabel(requestedPaths),
+          detail: mergeActivityDetail({
+            pass,
+            detail: {
+              artifactPaths: requestedPaths,
+              output: artifactSourceContent,
+              evidenceStrength,
+            },
+          }),
         });
       }
 
@@ -725,11 +771,13 @@ export async function runHarnessAwareTurn({
               kind: "tool_call",
               status: "running",
               label: getToolActivityLabel(call.name, call.input),
-              detail: {
+              detail: mergeActivityDetail({
                 pass,
-                toolName: call.name,
-                input: call.input,
-              },
+                detail: {
+                  toolName: call.name,
+                  input: call.input,
+                },
+              }),
             })
           );
 
@@ -755,11 +803,15 @@ export async function runHarnessAwareTurn({
           toolActivityIds.forEach((activityId, index) => {
             failActivity(activityId, {
               kind: "tool_result",
-              detail: {
-                toolName: toolCalls[index]?.name,
-                input: toolCalls[index]?.input ?? {},
-                error: message,
-              },
+              detail: mergeActivityDetail({
+                pass,
+                detail: {
+                  toolName: toolCalls[index]?.name,
+                  input: toolCalls[index]?.input ?? {},
+                  error: message,
+                  evidenceStrength: "none",
+                },
+              }),
             });
           });
 
@@ -767,17 +819,25 @@ export async function runHarnessAwareTurn({
         }
 
         toolResults.forEach((result, index) => {
+          const evidenceStrength = recordToolResultEvidence(evidence, result);
           updateActivity(toolActivityIds[index]!, {
             kind: "tool_result",
+            label: result.ok
+              ? getCompletedToolActivityLabel(result.name, result.input)
+              : getToolActivityLabel(result.name, result.input),
             status: result.ok ? "completed" : "failed",
             endedAt: Date.now(),
-            detail: {
-              toolName: result.name,
-              input: result.input,
-              output: result.output,
-              error: result.error,
-              durationMs: result.durationMs,
-            },
+            detail: mergeActivityDetail({
+              pass,
+              detail: {
+                toolName: result.name,
+                input: result.input,
+                output: result.output,
+                error: result.error,
+                durationMs: result.durationMs,
+                evidenceStrength,
+              },
+            }),
           });
         });
       }
@@ -813,9 +873,12 @@ export async function runHarnessAwareTurn({
       if (!applied.ok) {
         lastProtocolError = applied.error;
         failActivity(applyingActivityId, {
-          detail: {
-            error: applied.error,
-          },
+          detail: mergeActivityDetail({
+            pass,
+            detail: {
+              error: applied.error,
+            },
+          }),
         });
         emitProtocolRetryActivity(pass, applied.error);
         onVisibleContent?.("", pass);
@@ -827,11 +890,45 @@ export async function runHarnessAwareTurn({
         continue;
       }
 
+      const validation = validateTurnFinalization({
+        policy,
+        userMessage,
+        evidence,
+        content: applied.sanitizedContent,
+        artifacts: applied.artifacts,
+        changedPaths: applied.changedPaths,
+        hasExplicitArtifacts: editDirectives.length > 0,
+      });
+
+      if (!validation.ok) {
+        lastProtocolError = validation.error;
+        failActivity(applyingActivityId, {
+          detail: mergeActivityDetail({
+            pass,
+            detail: {
+              artifactPaths: applied.changedPaths,
+              error: validation.error,
+            },
+          }),
+        });
+        emitProtocolRetryActivity(pass, validation.error);
+        onVisibleContent?.("", pass);
+        loopMessages.push({ role: "assistant", content: passContent });
+        loopMessages.push({
+          role: "system",
+          content: buildHarnessProtocolError(validation.error),
+        });
+        continue;
+      }
+
       workingArtifacts = applied.artifacts;
       completeActivity(applyingActivityId, {
-        detail: {
-          artifactPaths: applied.changedPaths,
-        },
+        detail: mergeActivityDetail({
+          pass,
+          detail: {
+            artifactPaths: applied.changedPaths,
+          },
+        }),
       });
 
       onStatus?.({
@@ -860,6 +957,36 @@ export async function runHarnessAwareTurn({
       };
     }
 
+    const validation = validateTurnFinalization({
+      policy,
+      userMessage,
+      evidence,
+      content: strippedContent || passContent.trim(),
+      artifacts: workingArtifacts,
+      changedPaths: [],
+      hasExplicitArtifacts: false,
+    });
+
+    if (!validation.ok) {
+      lastProtocolError = validation.error;
+      failActivity(phaseActivityId, {
+        detail: mergeActivityDetail({
+          pass,
+          detail: {
+            error: validation.error,
+          },
+        }),
+      });
+      emitProtocolRetryActivity(pass, validation.error);
+      onVisibleContent?.("", pass);
+      loopMessages.push({ role: "assistant", content: passContent });
+      loopMessages.push({
+        role: "system",
+        content: buildHarnessProtocolError(validation.error),
+      });
+      continue;
+    }
+
     completeActivity(phaseActivityId);
     emitFinalizeActivity(pass, "Final response ready");
     onStatus?.(null);
@@ -877,10 +1004,12 @@ export async function runHarnessAwareTurn({
       kind: "finalize",
       status: "failed",
       label: "Failed to complete the request",
-      detail: {
+      detail: mergeActivityDetail({
         pass: MAX_PASSES,
-        error: lastProtocolError,
-      },
+        detail: {
+          error: lastProtocolError,
+        },
+      }),
       endedAt: Date.now(),
     })
   );

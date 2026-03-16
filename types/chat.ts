@@ -57,6 +57,11 @@ export type ChatActivityStatus =
   | 'completed'
   | 'failed';
 
+export type ChatActivityEvidenceStrength =
+  | 'strong'
+  | 'weak'
+  | 'none';
+
 export interface ChatActivityDetail {
   toolName?: string;
   input?: Record<string, unknown>;
@@ -65,6 +70,8 @@ export interface ChatActivityDetail {
   artifactPaths?: string[];
   pass?: number;
   durationMs?: number;
+  evidenceStrength?: ChatActivityEvidenceStrength;
+  attemptLabel?: string;
 }
 
 export interface ChatActivityEvent {

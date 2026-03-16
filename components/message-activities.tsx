@@ -8,7 +8,10 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ChatActivityEvent } from "@/types/chat";
+import type {
+  ChatActivityEvent,
+  ChatActivityEvidenceStrength,
+} from "@/types/chat";
 
 const DETAIL_PREVIEW_LIMIT = 1600;
 
@@ -101,6 +104,76 @@ function stringifyDetail(value: unknown): string | null {
   }
 }
 
+function getEvidenceBadge(strength?: ChatActivityEvidenceStrength) {
+  switch (strength) {
+    case "strong":
+      return {
+        label: "Strong evidence",
+        className: "border-sky-500/30 bg-sky-500/10 text-sky-700",
+      };
+    case "weak":
+      return {
+        label: "Weak evidence",
+        className: "border-amber-500/30 bg-amber-500/10 text-amber-700",
+      };
+    default:
+      return null;
+  }
+}
+
+function getEvidenceRowTone(strength?: ChatActivityEvidenceStrength): string {
+  switch (strength) {
+    case "strong":
+      return "border-sky-500/20 bg-sky-500/5";
+    case "weak":
+      return "border-amber-500/20 bg-amber-500/5";
+    default:
+      return "border-border/80 bg-background/40";
+  }
+}
+
+type ActivityGroup = {
+  id: string;
+  label: string;
+  activities: ChatActivityEvent[];
+};
+
+function groupActivities(activities: ChatActivityEvent[]): ActivityGroup[] {
+  const groups: ActivityGroup[] = [];
+  const groupMap = new Map<string, ActivityGroup>();
+
+  for (const activity of activities) {
+    const isFinalization = activity.kind === "finalize";
+    const attemptLabel =
+      activity.detail?.attemptLabel ??
+      (typeof activity.detail?.pass === "number"
+        ? `Attempt ${activity.detail.pass}`
+        : null);
+    const key = isFinalization
+      ? "finalization"
+      : attemptLabel
+        ? `attempt:${attemptLabel}`
+        : "activity";
+    const label = isFinalization ? "Finalization" : attemptLabel ?? "Activity";
+    const existing = groupMap.get(key);
+
+    if (existing) {
+      existing.activities.push(activity);
+      continue;
+    }
+
+    const group = {
+      id: key,
+      label,
+      activities: [activity],
+    };
+    groupMap.set(key, group);
+    groups.push(group);
+  }
+
+  return groups;
+}
+
 function ActivityDetailBlock({
   label,
   value,
@@ -134,6 +207,7 @@ function ActivityDetailBlock({
 }
 
 function ActivityRow({ activity }: { activity: ChatActivityEvent }) {
+  const evidenceBadge = getEvidenceBadge(activity.detail?.evidenceStrength);
   const duration = formatDuration(
     activity.detail?.durationMs ??
       (typeof activity.endedAt === "number"
@@ -151,7 +225,12 @@ function ActivityRow({ activity }: { activity: ChatActivityEvent }) {
   const hasRawDetails = Boolean(input || output || error || artifactPaths);
 
   return (
-    <div className="rounded-lg border border-border/80 bg-background/40 p-3 space-y-3">
+    <div
+      className={cn(
+        "rounded-lg border p-3 space-y-3",
+        getEvidenceRowTone(activity.detail?.evidenceStrength)
+      )}
+    >
       <div className="flex items-start gap-3">
         {getActivityIcon(activity)}
         <div className="min-w-0 flex-1 space-y-1">
@@ -174,11 +253,18 @@ function ActivityRow({ activity }: { activity: ChatActivityEvent }) {
                 {activity.detail.toolName}
               </code>
             )}
+            {evidenceBadge && (
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                  evidenceBadge.className
+                )}
+              >
+                {evidenceBadge.label}
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            {typeof activity.detail?.pass === "number" && (
-              <span>Pass {activity.detail.pass}</span>
-            )}
             {startedAt && <span>Started {startedAt}</span>}
             {endedAt && activity.endedAt && <span>Ended {endedAt}</span>}
             {duration && <span>Duration {duration}</span>}
@@ -230,13 +316,20 @@ export function MessageActivities({
   const retryCount = normalizedActivities.filter(
     (activity) => activity.kind === "protocol_retry"
   ).length;
+  const strongEvidenceCount = normalizedActivities.filter(
+    (activity) => activity.detail?.evidenceStrength === "strong"
+  ).length;
+  const weakEvidenceCount = normalizedActivities.filter(
+    (activity) => activity.detail?.evidenceStrength === "weak"
+  ).length;
   const hasFailure = normalizedActivities.some(
     (activity) => activity.status === "failed"
   );
   const hasRecovered = Boolean(
     hasFailure && summaryActivity?.kind === "finalize" && summaryActivity.status === "completed"
   );
-  const expanded = isOpen || hasFailure;
+  const expanded = isOpen || hasFailure || retryCount > 0;
+  const groupedActivities = groupActivities(normalizedActivities);
   const summaryLabel = summaryActivity
     ? summaryActivity.status === "running"
       ? `${summaryActivity.label}...`
@@ -253,6 +346,10 @@ export function MessageActivities({
     `${normalizedActivities.length} step${normalizedActivities.length === 1 ? "" : "s"}`,
     retryCount > 0 ? `${retryCount} retr${retryCount === 1 ? "y" : "ies"}` : null,
     completedCount > 0 ? `${completedCount} done` : null,
+    strongEvidenceCount > 0
+      ? `${strongEvidenceCount} strong evidence`
+      : null,
+    weakEvidenceCount > 0 ? `${weakEvidenceCount} weak evidence` : null,
     !hasRecovered && hasFailure ? "attention needed" : null,
   ]
     .filter(Boolean)
@@ -286,8 +383,15 @@ export function MessageActivities({
 
       {expanded && (
         <div className="space-y-3 border-t border-border/80 px-3 py-3">
-          {normalizedActivities.map((activity) => (
-            <ActivityRow key={activity.id} activity={activity} />
+          {groupedActivities.map((group) => (
+            <section key={group.id} className="space-y-3">
+              <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                {group.label}
+              </div>
+              {group.activities.map((activity) => (
+                <ActivityRow key={activity.id} activity={activity} />
+              ))}
+            </section>
           ))}
         </div>
       )}

@@ -1,6 +1,7 @@
 import type { ArtifactLanguage, Message } from "@/types/chat";
 import type { ChatArtifacts } from "@/types/chat";
 import { streamCompletion, type StreamStats } from "@/fetches/completion";
+import { inferReportBundlePaths, REPORT_BUNDLE_INTENT_RE } from "@/lib/report-bundles";
 import { applyArtifactOperations } from "@/utils/artifact-apply";
 import { buildArtifactManifest, buildArtifactProtocolError, buildArtifactSourceContext } from "@/utils/artifact-context";
 import type { ParsedArtifactResponse } from "@/utils/artifact-parser";
@@ -71,16 +72,6 @@ function assertNotCancelled(isCancelled?: () => boolean) {
   }
 }
 
-function slugifyFileStem(input: string): string {
-  const slug = input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-
-  return slug || "artifact";
-}
-
 function pickUniqueArtifactPath(
   artifacts: ChatArtifacts,
   basePath: string
@@ -120,8 +111,8 @@ function inferFallbackDocumentPath(
     return "docs/plan.md";
   }
 
-  if (/\b(report|summary|analysis)\b/.test(lowerUserMessage)) {
-    return "reports/summary.md";
+  if (REPORT_BUNDLE_INTENT_RE.test(userMessage)) {
+    return inferReportBundlePaths(userMessage).reportPath;
   }
 
   if (lowerContent.includes("# ") || lowerContent.includes("## ")) {
@@ -247,8 +238,15 @@ function synthesizeArtifactFallback(params: {
   const previousUserMessage = [...params.sessionMessages]
     .reverse()
     .find((message) => message.role === "user")?.content;
+  const reportIntent = REPORT_BUNDLE_INTENT_RE.test(
+    previousUserMessage ?? params.userMessage
+  );
 
-  if (explicitArtifactRequest || /\bemail|document|plan|report|brief\b/i.test(previousUserMessage ?? "")) {
+  if (
+    explicitArtifactRequest ||
+    reportIntent ||
+    /\bemail|document|plan|brief\b/i.test(previousUserMessage ?? "")
+  ) {
     return buildSyntheticCreateResponse({
       path: pickUniqueArtifactPath(
         params.artifacts,

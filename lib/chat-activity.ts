@@ -64,6 +64,18 @@ export function getArtifactActivityLabel(paths: string[]): string {
   return `Reading ${paths.length} artifacts`;
 }
 
+export function getArtifactResultActivityLabel(paths: string[]): string {
+  if (paths.length === 1) {
+    return `Artifact source read: ${paths[0]}`;
+  }
+
+  if (paths.length > 1) {
+    return `Artifact sources read (${paths.length})`;
+  }
+
+  return "Artifact source read";
+}
+
 export function getToolActivityLabel(
   toolName: string,
   input: Record<string, unknown>
@@ -95,5 +107,23 @@ export function getToolActivityLabel(
     }
     default:
       return `Running ${toolName}`;
+  }
+}
+
+export function getCompletedToolActivityLabel(
+  toolName: string,
+  input: Record<string, unknown>
+): string {
+  switch (toolName) {
+    case "fetch_url":
+      return "Fetched source";
+    case "read_file":
+      return "Read file";
+    case "search_files":
+      return getToolActivityLabel(toolName, input);
+    case "list_files":
+      return getToolActivityLabel(toolName, input);
+    default:
+      return getToolActivityLabel(toolName, input);
   }
 }

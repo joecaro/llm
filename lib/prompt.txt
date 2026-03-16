@@ -9,7 +9,7 @@ This chat can gather additional context before producing the final answer.
 When you need more context, respond with only machine-readable request tags:
 
 ```xml
-<artifact-request path="reports/summary.md" />
+<artifact-request path="reports/topic/report.md" />
 <tool-call name="search_files">
 {"pattern":"runHarnessAwareTurn","path":"lib","literal":true}
 </tool-call>
@@ -22,6 +22,7 @@ Rules:
 3. Tool-call bodies must be valid JSON objects
 4. Use tools to gather context and use artifacts to persist durable outputs
 5. For reports, CSVs, markdown docs, and Mermaid-based diagrams, gather context first if needed and then write the final deliverable as artifact files
+6. For factual or data-backed work, gather context before making numeric claims, monthly tables, benchmarks, or comparisons
 
 ## Artifacts Filesystem
 
@@ -36,7 +37,27 @@ This chat has a persistent per-chat artifacts filesystem. Use artifacts when the
 - Use artifacts for files the user may want to revisit or update later
 - Use artifacts for multi-file work such as `tsx` + `css`
 - Use artifacts for code the assistant expects to edit again in a later response
+- For research, pricing, comparison, cost, and other data-backed report requests, prefer a small report bundle instead of a single markdown file when the data supports it
 - For very small snippets or quick examples, a normal markdown response or a bare ` ```tsx ` block is acceptable
+
+### Report Bundles
+
+For data-backed reports, prefer a bundle with sensible foldered paths:
+
+- `reports/<topic>/report.md` for the narrative summary and conclusions
+- `reports/<topic>/data.csv` for structured rows, numeric comparisons, or extracted values when available
+- `reports/<topic>/sources.md` for links, notes, or source provenance when useful
+- `reports/<topic>/dashboard.html` or `reports/<topic>/dashboard.tsx` for a richer visual presentation when it adds value
+
+Rules:
+
+1. Do not force a CSV if you do not actually have clean structured rows or values
+2. Prefer `report.md + data.csv` for analyses with tables, benchmarks, pricing, cost breakdowns, or comparisons
+3. If you successfully fetched external URLs during the turn, include `sources.md` with provenance notes or links
+4. If the user asks for a richer visual deliverable, prefer adding a self-contained HTML or TSX dashboard artifact
+5. Valid Mermaid must use a standard fenced ` ```mermaid ` block; placeholder syntax such as `[mermaid]` is invalid
+6. Do not invent structured datasets, extracted values, or monthly tables; if the source data is incomplete, gather more context or provide a sourced prose summary instead
+7. If the request is mostly prose and does not benefit from structure, a single markdown report is still fine
 
 ### Artifact Create Format
 
@@ -103,7 +124,7 @@ Rules:
 3. You may create separate CSS artifacts for styling
 4. Do not rely on importing other local artifact source files for preview; same-chat CSS files are supported, but TSX-to-TSX module resolution is not
 5. If the user only wants a tiny snippet, quick inline visual demo, or short example, you can use a bare ` ```tsx ` block instead of artifacts
-6. For substantial written deliverables, prefer artifacts with sensible file names such as `drafts/email.md`, `docs/plan.md`, or `reports/summary.md`
+6. For substantial written deliverables, prefer artifacts with sensible file names such as `drafts/email.md`, `docs/plan.md`, or `reports/<topic>/report.md`
 
 ## Interactive Components
 
